@@ -1,0 +1,9 @@
+### 测试上传图片文件
+POST http://localhost:8080/api/upload/image
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="ori2.png"
+Content-Type: application/octet-stream
+
+< C:/Users/24180/Pictures/Camera Roll/ori2.png

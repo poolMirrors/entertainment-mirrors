@@ -1,0 +1,80 @@
+server:
+  port: 8081
+spring:
+  spring:
+    mvc:
+      servlet:
+        load-on-startup: 1
+  application:
+    name: mirrors
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/redis?useSSL=false&serverTimezone=UTC
+    username: root
+    password: root
+  redis:
+    host: 192.168.101.130
+    port: 6379
+    password: root
+    lettuce:
+      pool:
+        max-active: 10
+        max-idle: 10
+        min-idle: 1
+        time-between-eviction-runs: 10s
+  jackson:
+    default-property-inclusion: non_null
+  # 配置RabbitMQ
+  rabbitmq:
+    host: 192.168.101.130
+    port: 5672 # 15672 是web管理端口
+    username: admin
+    password: admin
+    virtual-host: /
+    publisher-confirm-type: correlated # 确认消息已发送到交换机（交互类型）
+    publisher-returns: true # 确认消息到达队列
+    template:
+      mandatory: true # 设置为 true 后，消费者在消息没有被路由到合适队列情况下会被return监听，而不会自动删除
+    listener:
+      direct:
+        auto-startup: true
+        # 重试策略
+        retry:
+          initial-interval: 1000 # 1秒后重试
+          max-interval: 10000 # 尝试的最大时间间隔
+          multiplier: 1.0 # 应用于先前传递重试时间间隔的乘数
+          enabled: true
+          max-attempts: 3 # 重试次数，3次
+      simple:
+        acknowledge-mode: manual # 设置消费者为手动确认模式
+  servlet:
+    multipart:
+      max-file-size: 5MB
+mybatis-plus:
+  type-aliases-package: com.mirrors.entity
+logging:
+  level:
+    com.mirrors: debug
+# MinIO配置
+minio:
+  endpoint: http://192.168.101.130:9800
+  access-key: minioadmin
+  secret-key: minioadmin
+  bucket:
+    media-files: mediafilesbucket
+    video-files: videofilesbucket
+# 配置xxl-job
+xxl-job:
+  admin:
+    addresses: http://127.0.0.1:9876/xxl-job-admin
+  executor:
+    app-name: job-handler
+    address: # 为空使用内嵌服务地址
+    ip: # 执行器IP默认为空表示自动获取IP
+    port: 9999
+    log-path: C:/JavaProjects/2-点评项目/project/xxl-job-master/logs
+    log-retention-days: 30
+  accessToken: default_token
+# 自定义配置es
+es:
+  address: http://192.168.101.130:9200
