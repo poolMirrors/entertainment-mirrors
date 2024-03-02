@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
  * @date 2024/1/9 10:38
  */
 @Service
-public class ITokenServiceImpl implements ITokenService {
+public class TokenServiceImpl implements ITokenService {
 
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
@@ -29,6 +29,7 @@ public class ITokenServiceImpl implements ITokenService {
      * @return
      */
     @Override
+    @Deprecated
     public String getOrderToken() {
         // 获取当前登录用户账号
         Long userId = UserHolder.getUser().getId();

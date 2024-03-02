@@ -30,7 +30,9 @@ public class ShopController {
      */
     @GetMapping("/{id}")
     public Result queryShopById(@PathVariable("id") Long id) {
-        return shopService.queryById(id);
+        Result result = shopService.queryById(id);
+        System.out.println(result);
+        return result;
     }
 
     /**
@@ -43,6 +45,8 @@ public class ShopController {
     public Result saveShop(@RequestBody Shop shop) {
         // 写入数据库
         shopService.save(shop);
+        // TODO 再写入Redis
+
         // 返回店铺id
         return Result.ok(shop.getId());
     }
@@ -55,19 +59,23 @@ public class ShopController {
      */
     @PutMapping
     public Result updateShop(@RequestBody Shop shop) {
-        return shopService.updateData(shop);
+        Result result = shopService.updateData(shop);
+        System.out.println(result);
+        return result;
     }
 
     /**
-     * 根据商铺类型分页查询商铺信息
+     * 根据 商铺类型 和 距离远近 分页查询商铺信息
      *
      * @param typeId  商铺类型
      * @param current 页码
      * @return 商铺列表
      */
     @GetMapping("/of/type")
-    public Result queryShopByType(@RequestParam("typeId") Integer typeId, @RequestParam(value = "current", defaultValue = "1") Integer current, @RequestParam(value = "x", required = false) Double x, @RequestParam(value = "y", required = false) Double y) {
-        return shopService.queryShopByType(typeId, current, x, y);
+    public Result queryShopByTypeAndPos(@RequestParam("typeId") Integer typeId, @RequestParam(value = "current", defaultValue = "1") Integer current, @RequestParam(value = "x", required = false) Double x, @RequestParam(value = "y", required = false) Double y) {
+        Result result = shopService.queryShopByTypeAndPos(typeId, current, x, y);
+        System.out.println(result);
+        return result;
     }
 
     /**
@@ -80,7 +88,8 @@ public class ShopController {
     @GetMapping("/of/name")
     public Result queryShopByName(@RequestParam(value = "name", required = false) String name, @RequestParam(value = "current", defaultValue = "1") Integer current) {
         // 根据类型分页查询
-        Page<Shop> page = shopService.query()
+        Page<Shop> page = shopService
+                .query()
                 .like(StrUtil.isNotBlank(name), "name", name)
                 .page(new Page<>(current, SystemConstants.MAX_PAGE_SIZE));
         // 返回数据

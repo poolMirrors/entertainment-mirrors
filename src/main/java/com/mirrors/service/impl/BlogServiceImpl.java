@@ -65,6 +65,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
             return;
         }
         String key = RedisConstants.BLOG_LIKED_KEY + blog.getId();
+        // 获取有序集合中指定成员的分数
         Double score = stringRedisTemplate.opsForZSet().score(key, user.getId().toString());
         blog.setIsLike(score != null);
     }
@@ -236,7 +237,8 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         // 查询收件箱【滚动分页查询】
         String key = "feed:" + userId;
         Set<ZSetOperations.TypedTuple<String>> tuples = stringRedisTemplate
-                .opsForZSet().reverseRangeByScoreWithScores(key, 0, max, offset, 2); // 4个关键参数
+                .opsForZSet()
+                .reverseRangeByScoreWithScores(key, 0, max, offset, 2); // 4个关键参数
 
         if (tuples == null || tuples.isEmpty()) {
             return Result.ok();

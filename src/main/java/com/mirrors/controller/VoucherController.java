@@ -50,6 +50,8 @@ public class VoucherController {
      */
     @GetMapping("/list/{shopId}")
     public Result queryVoucherOfShop(@PathVariable("shopId") Long shopId) {
-        return voucherService.queryVoucherOfShop(shopId);
+        Result result = voucherService.queryVoucherOfShop(shopId);
+        System.out.println(result);
+        return result;
     }
 }

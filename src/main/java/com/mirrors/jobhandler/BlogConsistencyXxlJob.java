@@ -40,7 +40,7 @@ public class BlogConsistencyXxlJob extends TimeTaskMessageAbstract {
     private RestHighLevelClient restHighLevelClient;
 
     /**
-     * 任务调度入口
+     * 任务调度入口，可以设置为每1秒进行调用
      */
     @XxlJob("consistency")
     public void BlogConsistency() {
@@ -51,6 +51,8 @@ public class BlogConsistencyXxlJob extends TimeTaskMessageAbstract {
         // 参数：分片序号，分片总数，消息类型，一次最多取到的任务数，一次任务调度执行的超时时间(秒)
         process(shardIndex, shardTotal, MESSAGE_TYPE, 5, 60);
     }
+
+    // -------------------------------业务流程-----------------------------------------------------------
 
     /**
      * 完成 任务处理的流程（这里采用一次处理一个消息）

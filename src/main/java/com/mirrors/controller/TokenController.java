@@ -21,8 +21,11 @@ public class TokenController {
      *
      * @return
      */
+    @Deprecated
     @GetMapping("token")
     public String getOrderToken() {
-        return iTokenService.getOrderToken();
+        String orderToken = iTokenService.getOrderToken();
+        System.out.println(orderToken);
+        return orderToken;
     }
 }

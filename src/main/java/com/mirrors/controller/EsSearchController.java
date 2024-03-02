@@ -30,7 +30,9 @@ public class EsSearchController {
      */
     @GetMapping("/blog/{text}/{page}/{size}")
     public Result list(@PathVariable("text") String text, @PathVariable("page") Integer page, @PathVariable("size") Integer size) {
-        return searchService.searchBlogByEs(text, page.intValue(), size.intValue());
+        Result result = searchService.searchBlogByEs(text, page.intValue(), size.intValue());
+        System.out.println(result);
+        return result;
     }
 
 }

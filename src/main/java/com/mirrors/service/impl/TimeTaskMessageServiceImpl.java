@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
 import java.util.List;
 
 /**
@@ -21,7 +22,7 @@ import java.util.List;
  */
 @Slf4j
 @Component
-public class ITimeTaskMessageServiceImpl extends ServiceImpl<TimeTaskMessageMapper, TimeTaskMessage> implements ITimeTaskMessageService {
+public class TimeTaskMessageServiceImpl extends ServiceImpl<TimeTaskMessageMapper, TimeTaskMessage> implements ITimeTaskMessageService {
 
     /**
      * 扫描消息表记录（分片广播）
@@ -34,7 +35,9 @@ public class ITimeTaskMessageServiceImpl extends ServiceImpl<TimeTaskMessageMapp
      */
     @Override
     public List<TimeTaskMessage> getMessageList(int shardIndex, int shardTotal, String messageType, int count) {
-        return baseMapper.selectListByShardIndex(shardTotal, shardIndex, messageType, count);
+        List<TimeTaskMessage> timeTaskMessages = baseMapper.selectListByShardIndex(shardTotal, shardIndex, messageType, count);
+        System.out.println(timeTaskMessages);
+        return timeTaskMessages;
     }
 
     /**
@@ -96,7 +99,10 @@ public class ITimeTaskMessageServiceImpl extends ServiceImpl<TimeTaskMessageMapp
     public int completedStageOne(long id) {
         TimeTaskMessage timeTaskMessage = new TimeTaskMessage();
         timeTaskMessage.setStageState1("1");
-        return baseMapper.update(timeTaskMessage, new LambdaQueryWrapper<TimeTaskMessage>().eq(TimeTaskMessage::getId, id));
+
+        int update = baseMapper.update(timeTaskMessage, new LambdaQueryWrapper<TimeTaskMessage>().eq(TimeTaskMessage::getId, id));
+        System.out.println(update);
+        return update;
     }
 
     /**

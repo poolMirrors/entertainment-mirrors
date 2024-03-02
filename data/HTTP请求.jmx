@@ -143,7 +143,7 @@
           <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="tokens" enabled="true">
             <stringProp name="delimiter">,</stringProp>
             <stringProp name="fileEncoding"></stringProp>
-            <stringProp name="filename">C:/JavaProjects/2-点评项目/project/data/tokens.txt</stringProp>
+            <stringProp name="filename">C:/JavaProjects/2-点评项目/project/entertainment-mirrors/data/tokens.txt</stringProp>
             <boolProp name="ignoreFirstLine">false</boolProp>
             <boolProp name="quotedData">false</boolProp>
             <boolProp name="recycle">true</boolProp>

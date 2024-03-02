@@ -1,30 +1,105 @@
 # 7.抢购接口的防刷限流
 
-参考：[10张图带你彻底搞懂限流、熔断、服务降级-腾讯云开发者社区-腾讯云 (tencent.com)](https://cloud.tencent.com/developer/article/1815254) 
+参考：[10张图带你彻底搞懂限流、熔断、服务降级-腾讯云开发者社区-腾讯云 (tencent.com)](https://cloud.tencent.com/developer/article/1815254)
 
-​	   [看完终于搞懂了限流，限流的优缺点、应用场景 - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/393178103) 
+​       [看完终于搞懂了限流，限流的优缺点、应用场景 - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/393178103)
 
-​	   [(秒杀项目) 4.9 削峰限流与防刷（核心）_4.9.148.刷-CSDN博客](https://blog.csdn.net/weixin_43919497/article/details/119876246) 
+​       [(秒杀项目) 4.9 削峰限流与防刷（核心）_4.9.148.刷-CSDN博客](https://blog.csdn.net/weixin_43919497/article/details/119876246)
 
-​	   [5种限流算法，7种限流方式，挡住突发流量？ - 掘金 (juejin.cn)](https://juejin.cn/post/7075137592265539614) 
+​       [5种限流算法，7种限流方式，挡住突发流量？ - 掘金 (juejin.cn)](https://juejin.cn/post/7075137592265539614)
 
-​	   [MQ实战-削峰填谷 - 简书 (jianshu.com)](https://www.jianshu.com/p/5ce83b227eb3) 
+​       [MQ实战-削峰填谷 - 简书 (jianshu.com)](https://www.jianshu.com/p/5ce83b227eb3)
 
-​	   [RabbitMQ的五种工作模式和两种消费模式_rabbitmq消费模式-CSDN博客](https://blog.csdn.net/NewBeeMu/article/details/121878183) 
+​       [RabbitMQ的五种工作模式和两种消费模式_rabbitmq消费模式-CSDN博客](https://blog.csdn.net/NewBeeMu/article/details/121878183)
 
-​	   [基于推和拉两种方式消费RabbitMQ消息-阿里云开发者社区 (aliyun.com)](https://developer.aliyun.com/article/900006) 
+​       [基于推和拉两种方式消费RabbitMQ消息-阿里云开发者社区 (aliyun.com)](https://developer.aliyun.com/article/900006)
 
-​	   [rabbitmq面试必懂之解耦，异步，削峰_rabbitmq解耦-CSDN博客](https://blog.csdn.net/xiejunxing/article/details/113480819) 
+​       [rabbitmq面试必懂之解耦，异步，削峰_rabbitmq解耦-CSDN博客](https://blog.csdn.net/xiejunxing/article/details/113480819)
 
-​	   [八、SpringBoot+RabbitMQ削峰-阿里云开发者社区 (aliyun.com)](https://developer.aliyun.com/article/1411344) 
+​       [八、SpringBoot+RabbitMQ削峰-阿里云开发者社区 (aliyun.com)](https://developer.aliyun.com/article/1411344)
 
-## 1.限流
 
-异步下的优惠券抢购，基于RabbitMQ；
 
-需不需要将消费者 换成 拉模式？？？
+## 1.削峰限流
 
-## 2.防刷
+参考：[【Thread】线程池的 7 种创建方式及自定义线程池-CSDN博客](https://blog.csdn.net/sco5282/article/details/120963463) 
+
+- 削峰应对瞬间流量多大，主要是因为**同一时间大量访问**
+
+- 方案
+
+  - **验证码**：平滑流量、在进行秒杀的时候防止秒杀的流量过高
+  - **Redis保存库存数量**：库存当作令牌，拿到令牌执行下一步
+  - **限流器**：如果库存太大，有几十万个，需要进行限流，限制每段时间用户访问个数
+  - **队列**：经过限流器再进入队列，排队
+
+- 令牌桶实现
+
+  ```java
+  // 桶的容量
+  private static long capacity = 100;
+  // 令牌生成速率，每秒5个
+  private static long rate = 5;
+  // 上次放置令牌的时间
+  private static long lastTime = System.currentTimeMillis();
+  // 桶中令牌余量
+  private static AtomicLong token = new AtomicLong();
+  
+  public synchronized boolean getToken() {
+      // 【惰性】更新余量
+      long now = System.currentTimeMillis();
+      long add = (now - lastTime) / 1000 * rate; // 距离上次隔了多少秒，再乘上每秒rate个令牌
+      token.set(Math.min(capacity, token.get() + add)); // 超出容量重置
+      // 更新时间
+      lastTime = now;
+      // 桶中还有令牌
+      if(token.get() > 0) {
+          token.decrementAndGet();
+          return true;
+      }
+      return false;
+  }
+  ```
+
+- 漏桶实现
+
+  ```java
+  // 桶的容量
+  private static long capacity = 100;
+  // 流出速率，每秒5个
+  private static long rate = 5;
+  // 上次请求到达桶的时间
+  private static long lastTime = System.currentTimeMillis();
+  // 桶中请求余量
+  private static AtomicLong request = new AtomicLong();
+  
+  public synchronized boolean getToken() {
+      long now = System.currentTimeMillis();
+      // 桶中请求为0，直接流出
+      if(request.get() == 0) {
+          lastTime = now;
+          request.set(1L);
+          return true;
+      }
+      // 计算当前时间到上次时间，桶中请求可以流出数量
+      request.set(request.get() - (now - lastTime) / 1000 * rate);
+      request.set(Math.max(0, request.get()));
+      // 设置新时间
+      lastTime = now;
+      // 当前水小于容量，可以进行
+      if(request.get() < capacity) {
+          request.incrementAndGet();
+          return true;
+      }
+      return false;
+  }
+  ```
+
+- 滑动窗口实现
+
+- ……
+
+## 3.防刷
 
 ### 自定义注解
 
@@ -333,7 +408,8 @@ public class RestrictRequestAop {
 - 消息是一个**过期消息，超时无人消费**
 - 要投递的**队列消息满了，无法投递**
 
-如果一个**队列中的消息已经成为死信**，并且这个**队列通过`dead-letter-exchange`属性指定了一个交换机**，那么队列中的**死信就会投递到这个交换机**中，而这个交换机就称为**死信交换机**（Dead Letter Exchange）。而此时加入有队列与死信交换机绑定，则最终死信就会被投递到这个队列中。
+如果一个**队列中的消息已经成为死信**，并且这个**队列通过`dead-letter-exchange`属性指定了一个交换机**，那么队列中的**死信就会投递到这个交换机**中，而这个交换机就称为**死信交换机**（Dead Letter
+Exchange）。而此时加入有队列与死信交换机绑定，则最终死信就会被投递到这个队列中。
 
 死信交换机有什么作用呢？
 
@@ -346,7 +422,8 @@ public class RestrictRequestAop {
 **前面两种作用场景可以看做是把死信交换机当做一种【消息处理的最终兜底方案】，与消费者重试时讲的`RepublishMessageRecoverer`作用类似。**
 
 而最后一种场景，大家设想一下这样的场景：
-如图，有一组绑定的交换机（`ttl.fanout`）和队列（`ttl.queue`）。**但是【`ttl.queue`没有消费者】监听，而是【设定了死信交换机】`hmall.direct`，而队列`direct.queue1`则与死信交换机绑定，RoutingKey是blue：**
+如图，有一组绑定的交换机（`ttl.fanout`）和队列（`ttl.queue`）。**但是【`ttl.queue`没有消费者】监听，而是【设定了死信交换机】`hmall.direct`，而队列`direct.queue1`
+则与死信交换机绑定，RoutingKey是blue：**
 ![image.png](images/Snipaste_2024-01-24_13-59-59.png)
 
 假如我们现在发送一条消息到`ttl.fanout`，RoutingKey为blue，并设置消息的**【有效期**为5000毫秒】：
@@ -360,7 +437,8 @@ public class RestrictRequestAop {
 **死信被再次投递到死信交换机`hmall.direct`，并沿用之前的RoutingKey，也就是`blue`：**
 ![image.png](images/Snipaste_2024-01-24_14-00-58.png)
 
-由于`direct.queue1`与`hmall.direct`绑定的key是blue，因此**最终消息被成功路由到`direct.queue1`，如果此时有消费者与`direct.queue1`绑定， 也就能成功消费消息了。但此时已经是5秒钟以后了：**
+由于`direct.queue1`与`hmall.direct`绑定的key是blue，因此**最终消息被成功路由到`direct.queue1`，如果此时有消费者与`direct.queue1`绑定，
+也就能成功消费消息了。但此时已经是5秒钟以后了：**
 ![image.png](images/Snipaste_2024-01-24_14-01-15.png)
 
 也就是说，publisher发送了一条消息，但最终consumer在5秒后才收到消息。我们成功实现了**延迟消息**。
@@ -428,6 +506,7 @@ public class MultiDelayMessage<T> {
 
 ```java
 ......
+
 @Configuration
 public class MQConfig {
 
@@ -619,21 +698,21 @@ public class MqReceiver {
  */
 @Transactional
 @Override
-public void createVoucherOrderRabbitMQ(VoucherOrder voucherOrder) {
-    ......
-    
-    // 创建订单，写入数据库
-    save(voucherOrder);
-    // 同时发送延时消息给MQ，死信交换机
-    mqSender.sendDelayOrderMessage(
+public void createVoucherOrderRabbitMQ(VoucherOrder voucherOrder){
+        ......
+
+        // 创建订单，写入数据库
+        save(voucherOrder);
+        // 同时发送延时消息给MQ，死信交换机
+        mqSender.sendDelayOrderMessage(
         MultiDelayMessage.builder()
         .data(voucherOrder.getId())
-        .delayMillis(CollUtil.newArrayList(10000L, 10000L, 10000L))
+        .delayMillis(CollUtil.newArrayList(10000L,10000L,10000L))
         .build()
-    );
-    
-    ......
-}
+        );
+
+        ......
+        }
 ```
 
 # 9.Feed流推送
@@ -646,16 +725,16 @@ public void createVoucherOrderRabbitMQ(VoucherOrder voucherOrder) {
 
 ```java
     /**
-     * 关注和取关
-     *
-     * @param followUserId 被关注的id
-     * @param isFollow     true或false
-     * @return
-     */
-    @PutMapping("/{id}/{isFollow}")
-    public Result follow(@PathVariable("id") Long followUserId, @PathVariable("isFollow") Boolean isFollow) {
-        return followService.follow(followUserId, isFollow);
-    }
+ * 关注和取关
+ *
+ * @param followUserId 被关注的id
+ * @param isFollow     true或false
+ * @return
+ */
+@PutMapping("/{id}/{isFollow}")
+public Result follow(@PathVariable("id") Long followUserId,@PathVariable("isFollow") Boolean isFollow){
+        return followService.follow(followUserId,isFollow);
+        }
 ```
 
 #### IFollowService实现类
@@ -664,32 +743,32 @@ public void createVoucherOrderRabbitMQ(VoucherOrder voucherOrder) {
 
 ```java
     @Override
-    public Result follow(Long followUserId, Boolean isFollow) {
-        Long userId = UserHolder.getUser().getId();
+public Result follow(Long followUserId,Boolean isFollow){
+        Long userId=UserHolder.getUser().getId();
 
         // 判断关注还是取关
-        if (isFollow) {
-            // 关注，新增数据
-            Follow follow = new Follow();
-            follow.setUserId(userId);
-            follow.setFollowUserId(followUserId);
-            // 保存数据库
-            boolean isSuccess = save(follow);
-            // 放入redis【存储用户关注了哪个人，用于后续求共同关注】
-            if (isSuccess) {
-                stringRedisTemplate.opsForSet().add("follows:" + userId, followUserId.toString());
-            }
+        if(isFollow){
+        // 关注，新增数据
+        Follow follow=new Follow();
+        follow.setUserId(userId);
+        follow.setFollowUserId(followUserId);
+        // 保存数据库
+        boolean isSuccess=save(follow);
+        // 放入redis【存储用户关注了哪个人，用于后续求共同关注】
+        if(isSuccess){
+        stringRedisTemplate.opsForSet().add("follows:"+userId,followUserId.toString());
+        }
 
-        } else {
-            // 取关，删除
-            boolean isSuccess = remove(new QueryWrapper<Follow>().eq("user_id", userId).eq("follow_user_id", followUserId));
-            // 从redis移除
-            if (isSuccess) {
-                stringRedisTemplate.opsForSet().remove("follows:" + userId, followUserId.toString());
-            }
+        }else{
+        // 取关，删除
+        boolean isSuccess=remove(new QueryWrapper<Follow>().eq("user_id",userId).eq("follow_user_id",followUserId));
+        // 从redis移除
+        if(isSuccess){
+        stringRedisTemplate.opsForSet().remove("follows:"+userId,followUserId.toString());
+        }
         }
         return Result.ok();
-    }
+        }
 ```
 
 ### 查询共同关注
@@ -704,40 +783,42 @@ public void createVoucherOrderRabbitMQ(VoucherOrder voucherOrder) {
  * @return
  */
 @GetMapping("/common/{id}")
-public Result followCommon(@PathVariable("id") Long id) {
-    return followService.followCommon(id);
-}
+public Result followCommon(@PathVariable("id") Long id){
+        return followService.followCommon(id);
+        }
 ```
 
 #### IFollowService实现类
 
 ```java
 @Override
-public Result followCommon(Long id) {
-    // 获取当前用户
-    Long userId = UserHolder.getUser().getId();
-    String key1 = "follows:" + userId;
-    String key2 = "follows:" + id;
-    //【求交集】
-    Set<String> intersect = stringRedisTemplate.opsForSet().intersect(key1, key2);
-    if (intersect == null || intersect.isEmpty()) {
+public Result followCommon(Long id){
+        // 获取当前用户
+        Long userId=UserHolder.getUser().getId();
+        String key1="follows:"+userId;
+        String key2="follows:"+id;
+        //【求交集】
+        Set<String> intersect=stringRedisTemplate.opsForSet().intersect(key1,key2);
+        if(intersect==null||intersect.isEmpty()){
         return Result.ok(Collections.emptyList());
-    }
-    // 解析id集合，查询用户
-    List<Long> ids = intersect.stream().map(Long::valueOf).collect(Collectors.toList());
-    List<UserDTO> userDTOList = userService.listByIds(ids)
-            .stream()
-            .map(user -> BeanUtil.copyProperties(user, UserDTO.class))
-            .collect(Collectors.toList());
-    return Result.ok(userDTOList);
-}
+        }
+        // 解析id集合，查询用户
+        List<Long> ids=intersect.stream().map(Long::valueOf).collect(Collectors.toList());
+        List<UserDTO> userDTOList=userService.listByIds(ids)
+        .stream()
+        .map(user->BeanUtil.copyProperties(user,UserDTO.class))
+        .collect(Collectors.toList());
+        return Result.ok(userDTOList);
+        }
 ```
 
 ## 2.Feed流介绍
 
-参考：[如何设计一个超级牛逼的 Feed 流系统 - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/259562762) 
+参考：[如何设计一个超级牛逼的 Feed 流系统 - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/259562762)
 
-​	   [Feed 流系统杂谈 - 掘金 (juejin.cn)](https://juejin.cn/post/7102236106665492487) 
+​       [Feed 流系统杂谈 - 掘金 (juejin.cn)](https://juejin.cn/post/7102236106665492487)
+
+​       [如何打造千万级Feed流系统-阿里云开发者社区 (aliyun.com)](https://developer.aliyun.com/article/224132)
 
 当我们关注了用户后，这个用户发了动态，那么我们应该把这些数据推送给用户，这个需求，其实我们又把他叫做Feed流，关注推送也叫做Feed流，直译为投喂。为用户持续的提供“沉浸式”的体验，通过无限下拉刷新获取新的信息。
 
@@ -774,8 +855,8 @@ Timeline：不做内容筛选，简单的按照内容发布时间排序，常用
 1. 也叫读扩散**（很少使用）**
 2. 该模式的核心含义就是：当张三和李四和王五发了消息后，都会保存在自己的邮箱中，假设赵六要读取信息，那么他会从读取他自己的收件箱，此时系统会从他关注的人群中，把他关注人的信息全部都进行拉取，然后在进行排序
 3. 优缺点
-   1. 优点：比较节约空间，因为赵六在读信息时，并没有重复读取，而且读取完之后可以把他的收件箱进行清楚。
-   2. 缺点：比较延迟，当用户读取数据时才去关注的人里边去读取数据，假设用户关注了大量的用户，那么此时就会拉取海量的内容，对服务器压力巨大。
+    1. 优点：比较节约空间，因为赵六在读信息时，并没有重复读取，而且读取完之后可以把他的收件箱进行清楚。
+    2. 缺点：比较延迟，当用户读取数据时才去关注的人里边去读取数据，假设用户关注了大量的用户，那么此时就会拉取海量的内容，对服务器压力巨大。
 
 ![1653809450816](images/1653809450816.png)
 
@@ -784,8 +865,8 @@ Timeline：不做内容筛选，简单的按照内容发布时间排序，常用
 1. 也叫写扩散（**适合用户量少，没有大up**）
 2. 推模式是没有写邮箱的，当张三写了一个内容，此时会主动的把张三写的内容发送到他的粉丝收件箱中去，假设此时李四再来读取，就不用再去临时拉取了
 3. 优缺点
-   1. 优点：时效快，不用临时拉取
-   2. 缺点：内存压力大，假设一个大V写信息，很多人关注他， 就会写很多分数据到粉丝那边去
+    1. 优点：时效快，不用临时拉取
+    2. 缺点：内存压力大，假设一个大V写信息，很多人关注他， 就会写很多分数据到粉丝那边去
 
 ![1653809875208](images/1653809875208.png)
 
@@ -793,11 +874,11 @@ Timeline：不做内容筛选，简单的按照内容发布时间排序，常用
 
 1. 也叫做读写混合，兼具推和拉两种模式的优点（**适合大up**）
 2. 推拉模式是一个折中的方案，站在发件人这一段：
-   1. 如果是个**小up**，那么我们采用**写扩散**的方式，直接把数据写入到他的粉丝中去，因为普通的人他的粉丝关注量比较小，所以这样做没有压力
-   2. 如果是**大up**，那么他是直接**将数据先写入到一份到发件箱（普通粉丝）**里边去，然后再**直接写一份到活跃粉丝收件箱**里边去，
+    1. 如果是个**小up**，那么我们采用**写扩散**的方式，直接把数据写入到他的粉丝中去，因为普通的人他的粉丝关注量比较小，所以这样做没有压力
+    2. 如果是**大up**，那么他是直接**将数据先写入到一份到发件箱（普通粉丝）**里边去，然后再**直接写一份到活跃粉丝收件箱**里边去，
 3. 现在站在收件人这端来看：
-   1. 如果是**活跃粉丝**，那么大V和普通的人发的都会直接写入到自己收件箱里边来
-   2. 而如果是**普通粉丝**，由于他们上线不是很频繁，所以等他们上线时，再从发件箱里边去拉信息。
+    1. 如果是**活跃粉丝**，那么大V和普通的人发的都会直接写入到自己收件箱里边来
+    2. 而如果是**普通粉丝**，由于他们上线不是很频繁，所以等他们上线时，再从发件箱里边去拉信息。
 
 ![1653812346852](images/1653812346852.png)
 
@@ -813,13 +894,16 @@ Timeline：不做内容筛选，简单的按照内容发布时间排序，常用
 
 Feed流中的数据会不断更新（有新的推文），所以数据的角标也在变化，因此不能采用传统的分页模式。
 
-假设在t1 时刻，我们去读取第一页，此时page = 1 ，size = 5 ，那么我们拿到的就是10~6 这几条记录，假设**现在t2时候又发布了一条记录**，此时t3 时刻，我们来读取第二页，读取第二页传入的参数是page=2 ，size=5 ，那么此时读取到的第二页实际上是从6 开始，然后是6~2 ，那么我们就读取到了重复的数据，所以feed流的分页，不能采用原始方案来做。
+假设在t1 时刻，我们去读取第一页，此时page = 1 ，size = 5 ，那么我们拿到的就是10~6 这几条记录，假设**现在t2时候又发布了一条记录**，此时t3 时刻，我们来读取第二页，读取第二页传入的参数是page=2
+，size=5 ，那么此时读取到的第二页实际上是从6 开始，然后是6~2 ，那么我们就读取到了重复的数据，所以feed流的分页，不能采用原始方案来做。
 
 ![1653813047671](images/1653813047671.png)
 
 我们需要**记录每次操作的最后一条，然后从这个位置开始去读取数据**
 
-举个例子：我们从t1时刻开始，拿第一页数据，拿到了10~6，然后**记录下当前最后一次拿取的记录，就是6**，t2时刻发布了新的记录，此时这个11放到最顶上，但是不会影响我们之前记录的6，此时t3时刻来拿第二页，第二页这个时候拿数据，还是从6后一点的5去拿，就拿到了5-1的记录。我们这个地方可以**采用sortedSet来做，可以进行范围查询，并且还可以记录当前获取数据时间戳最小值，就可以实现滚动分页了**
+举个例子：我们从t1时刻开始，拿第一页数据，拿到了10~6，然后**记录下当前最后一次拿取的记录，就是6**
+，t2时刻发布了新的记录，此时这个11放到最顶上，但是不会影响我们之前记录的6，此时t3时刻来拿第二页，第二页这个时候拿数据，还是从6后一点的5去拿，就拿到了5-1的记录。我们这个地方可以**
+采用sortedSet来做，可以进行范围查询，并且还可以记录当前获取数据时间戳最小值，就可以实现滚动分页了**
 
 ![1653813462834](images/1653813462834.png)
 
@@ -835,37 +919,37 @@ Feed流中的数据会不断更新（有新的推文），所以数据的角标�
  * @return
  */
 @PostMapping
-public Result saveBlog(@RequestBody Blog blog) {
-    return blogService.saveBlog(blog);
-}
+public Result saveBlog(@RequestBody Blog blog){
+        return blogService.saveBlog(blog);
+        }
 ```
 
 #### IBlogService实现类
 
 ```java
 @Override
-public Result saveBlog(Blog blog) {
-    // 获取登录用户
-    UserDTO user = UserHolder.getUser();
-    blog.setUserId(user.getId());
-    // 保存推文到MySQL数据库
-    boolean isSuccess = save(blog);
-    if (!isSuccess) {
+public Result saveBlog(Blog blog){
+        // 获取登录用户
+        UserDTO user=UserHolder.getUser();
+        blog.setUserId(user.getId());
+        // 保存推文到MySQL数据库
+        boolean isSuccess=save(blog);
+        if(!isSuccess){
         return Result.ok("发布动态失败");
-    }
-    // 查询MySQL中所有粉丝，推送笔记id
-    List<Follow> follows = followService.query().eq("follow_user_id", user.getId()).list();
-    for (Follow follow : follows) {
+        }
+        // 查询MySQL中所有粉丝，推送笔记id
+        List<Follow> follows=followService.query().eq("follow_user_id",user.getId()).list();
+        for(Follow follow:follows){
         // 获取粉丝id，推送
-        Long userId = follow.getUserId();
+        Long userId=follow.getUserId();
         // 推送到redis的SortedSet【score为 当前时间戳】
-        String key = "feed:" + userId;
-        stringRedisTemplate.opsForZSet().add(key, blog.getId().toString(), System.currentTimeMillis());
-    }
+        String key="feed:"+userId;
+        stringRedisTemplate.opsForZSet().add(key,blog.getId().toString(),System.currentTimeMillis());
+        }
 
-    // 返回id
-    return Result.ok(blog.getId());
-}
+        // 返回id
+        return Result.ok(blog.getId());
+        }
 ```
 
 ### 查询分页
@@ -874,90 +958,90 @@ public Result saveBlog(Blog blog) {
 
 ```java
     /**
-     * Feed流推模式下，信息的滚动分页
-     *
-     * @param max
-     * @param offset 注意第一次查询offset为0，设置默认值（defaultValue = "0"），避免空指针
-     * @return
-     */
-    @GetMapping("/of/follow")
-    public Result queryBlogFollow(@RequestParam("lastId") Long max, @RequestParam(value = "offset", defaultValue = "0") Integer offset) {
-        return blogService.queryBlogOfFollow(max, offset);
-    }
+ * Feed流推模式下，信息的滚动分页
+ *
+ * @param max
+ * @param offset 注意第一次查询offset为0，设置默认值（defaultValue = "0"），避免空指针
+ * @return
+ */
+@GetMapping("/of/follow")
+public Result queryBlogFollow(@RequestParam("lastId") Long max,@RequestParam(value = "offset", defaultValue = "0") Integer offset){
+        return blogService.queryBlogOfFollow(max,offset);
+        }
 ```
 
 #### IBlogService实现类
 
-命令：**zrevrangebyscore**  key  max  min  \[**withscores**]  [**limit**  offset  count]
+命令：**zrevrangebyscore**  key max min \[**withscores**]  [**limit**  offset  count]
 
-1. offset：上次查询结果最小值 有多少个，offset就为多少 | 初始为0 
-2. count：查询 多少条 信息
-3. max：上次查询的最小值（当前时间戳）
+1. **offset：上次查询结果最小值 有多少个，offset就为多少 | 初始为0（去除最小值有多个的情况）**
+2. **count：查询 多少条 信息**
+3. **max：上次查询的最小值（当前时间戳）**
 4. min：一般为0
 
 ```java
     @Override
-    public Result queryBlogOfFollow(Long max, Integer offset) {
+public Result queryBlogOfFollow(Long max,Integer offset){
         // 获取当前用户
-        Long userId = UserHolder.getUser().getId();
+        Long userId=UserHolder.getUser().getId();
 
         // 查询收件箱【滚动分页查询】
-        String key = "feed:" + userId;
-        Set<ZSetOperations.TypedTuple<String>> tuples = stringRedisTemplate
-                .opsForZSet().reverseRangeByScoreWithScores(key, 0, max, offset, 2); // 4个关键参数
+        String key="feed:"+userId;
+        Set<ZSetOperations.TypedTuple<String>>tuples=stringRedisTemplate
+        .opsForZSet().reverseRangeByScoreWithScores(key,0,max,offset,2); // 4个关键参数
 
-        if (tuples == null || tuples.isEmpty()) {
-            return Result.ok();
+        if(tuples==null||tuples.isEmpty()){
+        return Result.ok();
         }
 
         // 解析数据
-        List<Long> ids = new ArrayList<>(tuples.size()); // 指定大小，避免扩容影响性能
-        long minTime = 0;
-        int minCount = 1; // 最小元素个数，也就是offset
+        List<Long> ids=new ArrayList<>(tuples.size()); // 指定大小，避免扩容影响性能
+        long minTime=0;
+        int minCount=1; // 最小元素个数，也就是offset
 
-        for (ZSetOperations.TypedTuple<String> tuple : tuples) {
-            // blogId
-            String blogId = tuple.getValue();
-            ids.add(Long.valueOf(blogId));
-            // minTime时间戳，最后一个元素最小（已排序）
-            long time = tuple.getScore().longValue();
-            if (time == minTime) {
-                // offset最小元素的个数
-                minCount++;
-            } else {
-                minTime = time;
-                minCount = 0;
-            }
+        for(ZSetOperations.TypedTuple<String> tuple:tuples){
+        // blogId
+        String blogId=tuple.getValue();
+        ids.add(Long.valueOf(blogId));
+        // minTime时间戳，最后一个元素最小（已排序）
+        long time=tuple.getScore().longValue();
+        if(time==minTime){
+        // offset最小元素的个数
+        minCount++;
+        }else{
+        minTime=time;
+        minCount=0;
+        }
         }
 
         // 根据id查询blog
-        String idStr = StrUtil.join(",", ids);
-        List<Blog> blogList = query().in("id", ids).last("ORDER BY FIELD(id," + idStr + ")").list();
+        String idStr=StrUtil.join(",",ids);
+        List<Blog> blogList=query().in("id",ids).last("ORDER BY FIELD(id,"+idStr+")").list();
         // 查询blog点赞信息
-        blogList.forEach(blog -> {
-            Long id = blog.getUserId();
-            User user = userService.getById(id);
-            blog.setName(user.getNickName());
-            blog.setIcon(user.getIcon());
-            // 查询blog是否点赞
-            isBlogLiked(blog);
+        blogList.forEach(blog->{
+        Long id=blog.getUserId();
+        User user=userService.getById(id);
+        blog.setName(user.getNickName());
+        blog.setIcon(user.getIcon());
+        // 查询blog是否点赞
+        isBlogLiked(blog);
         });
 
         // 返回
-        ScrollResult scrollResult = new ScrollResult();
+        ScrollResult scrollResult=new ScrollResult();
         scrollResult.setList(blogList);
         scrollResult.setOffset(minCount);
         scrollResult.setMinTime(minTime);
 
         return Result.ok(scrollResult);
-    }
+        }
 ```
 
 # 10.跨域CORS
 
 ## 1.介绍
 
-参考：[什么是跨域？跨域解决方法-CSDN博客](https://blog.csdn.net/qq_38128179/article/details/84956552) 
+参考：[什么是跨域？跨域解决方法-CSDN博客](https://blog.csdn.net/qq_38128179/article/details/84956552)
 
 1. **CORS **全称是 cross origin resource share；表示跨域资源共享。
 2. 基于浏览器的同源策略，去判断是否跨域请求，**同源策略是浏览器的一种安全机制**，从一个地址请求另一个地址，如果协议、主机、端口三者全部一致则不属于跨域，否则有一个不一致就是跨域请求
@@ -980,6 +1064,8 @@ public Result saveBlog(Blog blog) {
 ![](images/Snipaste_2024-01-15_20-03-30.png)
 
 # 11.异常处理与参数校验
+
+参考：https://www.cnblogs.com/l-y-h/p/12797809.html
 
 ## 1.异常处理
 
@@ -1101,11 +1187,11 @@ public class BusinessException extends RuntimeException {
 
 ### 统一异常处理器
 
-参考：[spring的@ControllerAdvice注解 - yanggb - 博客园 (cnblogs.com)](https://www.cnblogs.com/yanggb/p/10859907.html) 
+参考：[spring的@ControllerAdvice注解 - yanggb - 博客园 (cnblogs.com)](https://www.cnblogs.com/yanggb/p/10859907.html)
 
-​	   [Spring MVC : 注解@ControllerAdvice的工作原理_controlleradvice原理-CSDN博客](https://blog.csdn.net/andy_zhang2007/article/details/100041219) 
+​       [Spring MVC : 注解@ControllerAdvice的工作原理_controlleradvice原理-CSDN博客](https://blog.csdn.net/andy_zhang2007/article/details/100041219)
 
-​	   [@ControllerAdvice 注解使用及原理探究 - 京东云技术团队 - 博客园 (cnblogs.com)](https://www.cnblogs.com/jingdongkeji/p/17605738.html) 
+​       [@ControllerAdvice 注解使用及原理探究 - 京东云技术团队 - 博客园 (cnblogs.com)](https://www.cnblogs.com/jingdongkeji/p/17605738.html)
 
 1. @ControllerAdvice：对 Controller 的切面环绕
 2. @ResponseBody：将 java对象 转为 json格式 的数据。
@@ -1156,20 +1242,21 @@ public class BusinessExceptionHandler {
 
 ## 2.参数合法性校验
 
-参考：[SpringMVC之JSR303和拦截器-阿里云开发者社区 (aliyun.com)](https://developer.aliyun.com/article/1359591) 
+参考：[SpringMVC之JSR303和拦截器-阿里云开发者社区 (aliyun.com)](https://developer.aliyun.com/article/1359591)
 
-​	  [【全网最全】JSR303参数校验与全局异常处理（从理论到实践别用if判断参数了） - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/475250372) 
+​      [【全网最全】JSR303参数校验与全局异常处理（从理论到实践别用if判断参数了） - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/475250372)
 
-​	  [Spring Boot 使用 JSR303（@Validated） 实现参数校验_掌握spring掌握jsr303验证的心得-CSDN博客](https://blog.csdn.net/qq_41712834/article/details/106886410) 
+​      [Spring Boot 使用 JSR303（@Validated） 实现参数校验_掌握spring掌握jsr303验证的心得-CSDN博客](https://blog.csdn.net/qq_41712834/article/details/106886410)
 
 ### DTO类添加注解
 
 ```java
+
 @Data
 @Builder
 public class LoginFormDTO {
-	// 参数合法性校验注解之一
-    @NotEmpty(message = "登录手机号不能为空1") 
+    // 参数合法性校验注解之一
+    @NotEmpty(message = "登录手机号不能为空1")
     private String phone;
     private String code;
     private String password;
@@ -1187,9 +1274,9 @@ public class LoginFormDTO {
  * @return
  */
 @PostMapping("/login")
-public Result login(@RequestBody @Validated LoginFormDTO loginForm, HttpSession session) {
-    return userService.login(loginForm, session);
-}
+public Result login(@RequestBody @Validated LoginFormDTO loginForm,HttpSession session){
+        return userService.login(loginForm,session);
+        }
 ```
 
 ### 统一异常处理BusinessExceptionHandler
@@ -1237,9 +1324,9 @@ public class BusinessExceptionHandler {
 
 1. 有时候在同一个属性上设置一个校验规则不能满足要求，比如：订单编号由系统生成，在 添加订单 时要求订单编号为空，在 更新订单 时要求订单编写不能为空
 2. 分组校验，**同一个属性定义多个校验规则属于不同的分组，比如**
-   1. 添加订单 定义 @NULL 规则属于insert分组
-   2. 更新订单 定义 @NotEmpty 规则属于update分组
-   3. insert和update是分组的名称，是可以修改的。
+    1. 添加订单 定义 @NULL 规则属于insert分组
+    2. 更新订单 定义 @NotEmpty 规则属于update分组
+    3. insert和update是分组的名称，是可以修改的。
 
 #### 定义校验分组类
 
@@ -1275,6 +1362,7 @@ public class ValidationGroups {
 #### DTO类改变注解
 
 ```java
+
 @Data
 @Builder
 public class LoginFormDTO {
@@ -1302,22 +1390,24 @@ public class LoginFormDTO {
  * @return
  */
 @PostMapping("/login")
-public Result login(@RequestBody @Validated(ValidationGroups.Insert.class) LoginFormDTO loginForm, HttpSession session) {
-    return userService.login(loginForm, session);
-}
+public Result login(@RequestBody @Validated(ValidationGroups.Insert.class) LoginFormDTO loginForm,HttpSession session){
+        return userService.login(loginForm,session);
+        }
 ```
 
 # 12.分布式存储
 
 ## 1.介绍
 
-参考：[架构师必知必会系列：分布式文件系统与存储 - 掘金 (juejin.cn)](https://juejin.cn/post/7309157781561835530) 
+参考：[架构师必知必会系列：分布式文件系统与存储 - 掘金 (juejin.cn)](https://juejin.cn/post/7309157781561835530)
 
-​	   [分布式文件系统调研（详细版） - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/493647334) 
+​       [分布式文件系统调研（详细版） - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/493647334)
 
-分布式文件系统（Distributed File System，DFS）是指**文件系统管理的物理存储资源不一定直接连接在本地节点上**，而是通过计算机网络与节点（可简单的理解为一台计算机）相连；或是若干不同的逻辑磁盘分区或卷标组合在一起而形成的完整的有层次的文件系统。DFS为**分布在网络上任意位置的资源提供一个逻辑上的树形文件系统结构**，从而使用户访问分布在网络上的共享文件更加简便 
+分布式文件系统（Distributed File System，DFS）是指**文件系统管理的物理存储资源不一定直接连接在本地节点上**
+，而是通过计算机网络与节点（可简单的理解为一台计算机）相连；或是若干不同的逻辑磁盘分区或卷标组合在一起而形成的完整的有层次的文件系统。DFS为**分布在网络上任意位置的资源提供一个逻辑上的树形文件系统结构**
+，从而使用户访问分布在网络上的共享文件更加简便
 
- 好处：
+好处：
 
 1. 一台计算机的文件系统处理能力扩充到多台计算机同时处理
 2. 一台计算机挂了还有另外副本计算机提供数据
@@ -1327,15 +1417,15 @@ public Result login(@RequestBody @Validated(ValidationGroups.Insert.class) Login
 
 ### 原理与简介
 
-参考：[Linux安装MinIO（图文解说详细版）-CSDN博客](https://blog.csdn.net/csdnerM/article/details/121336618) 
+参考：[Linux安装MinIO（图文解说详细版）-CSDN博客](https://blog.csdn.net/csdnerM/article/details/121336618)
 
-​	  [Linux（CentOS）安装MinIo，详细教程，附防火墙端口开放操作 - 山有扶苏QWQ - 博客园 (cnblogs.com)](https://www.cnblogs.com/blogof-fusu/p/16327384.html#:~:text=Linux%E5%AE%89%E8%A3%85MinIo%EF%BC%88%E5%B7%B2%E9%85%8D%E7%BD%AE%E5%BC%80%E6%9C%BA%E9%87%8D%E5%90%AF%EF%BC%89%201%201%EF%BC%8C%E5%87%86%E5%A4%87%E5%AE%89%E8%A3%85%E7%9B%AE%E5%BD%95%E5%92%8C%E6%96%87%E4%BB%B6%202%202%EF%BC%8C%E5%AE%89%E8%A3%85%203%203%EF%BC%8C%E5%90%8E%E5%8F%B0%E5%90%AF%E5%8A%A8,4%204%EF%BC%8C%E5%BC%80%E6%94%BE%E5%AF%B9%E5%BA%94%E9%98%B2%E7%81%AB%E5%A2%99%E7%AB%AF%E5%8F%A3%205%205.%E5%B0%9D%E8%AF%95%E7%99%BB%E5%BD%95MinIo%206%206.%E6%96%B0%E5%BB%BA%E7%AE%A1%E7%90%86%E5%91%98%E7%94%A8%E6%88%B7%E5%B9%B6%E8%B5%8B%E6%9D%83%207%207.%E8%AE%BE%E7%BD%AEMinio%E6%9C%8D%E5%8A%A1%E5%99%A8%E5%AE%95%E6%9C%BA%E5%90%8E%E8%87%AA%E5%8A%A8%E9%87%8D%E5%90%AF) 
+​      [Linux（CentOS）安装MinIo，详细教程，附防火墙端口开放操作 - 山有扶苏QWQ - 博客园 (cnblogs.com)](https://www.cnblogs.com/blogof-fusu/p/16327384.html#:~:text=Linux%E5%AE%89%E8%A3%85MinIo%EF%BC%88%E5%B7%B2%E9%85%8D%E7%BD%AE%E5%BC%80%E6%9C%BA%E9%87%8D%E5%90%AF%EF%BC%89%201%201%EF%BC%8C%E5%87%86%E5%A4%87%E5%AE%89%E8%A3%85%E7%9B%AE%E5%BD%95%E5%92%8C%E6%96%87%E4%BB%B6%202%202%EF%BC%8C%E5%AE%89%E8%A3%85%203%203%EF%BC%8C%E5%90%8E%E5%8F%B0%E5%90%AF%E5%8A%A8,4%204%EF%BC%8C%E5%BC%80%E6%94%BE%E5%AF%B9%E5%BA%94%E9%98%B2%E7%81%AB%E5%A2%99%E7%AB%AF%E5%8F%A3%205%205.%E5%B0%9D%E8%AF%95%E7%99%BB%E5%BD%95MinIo%206%206.%E6%96%B0%E5%BB%BA%E7%AE%A1%E7%90%86%E5%91%98%E7%94%A8%E6%88%B7%E5%B9%B6%E8%B5%8B%E6%9D%83%207%207.%E8%AE%BE%E7%BD%AEMinio%E6%9C%8D%E5%8A%A1%E5%99%A8%E5%AE%95%E6%9C%BA%E5%90%8E%E8%87%AA%E5%8A%A8%E9%87%8D%E5%90%AF)
 
-​	  [Linux MinIO 安装与配置(清晰明了)_linux安装minio-CSDN博客](https://blog.csdn.net/qq_44697754/article/details/133303180) 
+​      [Linux MinIO 安装与配置(清晰明了)_linux安装minio-CSDN博客](https://blog.csdn.net/qq_44697754/article/details/133303180)
 
-​          [minio 高可用 （原理+秒懂+史上最全）_minio原理-CSDN博客](https://blog.csdn.net/crazymakercircle/article/details/120855464) 
+​          [minio 高可用 （原理+秒懂+史上最全）_minio原理-CSDN博客](https://blog.csdn.net/crazymakercircle/article/details/120855464)
 
-​          [Minio架构分析 - 掘金 (juejin.cn)](https://juejin.cn/post/6918353666038562824) 
+​          [Minio架构分析 - 掘金 (juejin.cn)](https://juejin.cn/post/6918353666038562824)
 
 1. **MinIO 是一个非常轻量的服务**,可以很简单的和其他应用的结合使用，它兼容亚马逊 S3 云存储服务接口，非常适合于存储大容量非结构化的数据，例如图片、视频、日志文件、备份数据和容器/虚拟机镜像等。
 2. 特点：轻量，使用简单，功能强大，支持各种平台，单个文件最大5TB，兼容 Amazon S3接口，提供了 Java、Python、GO等多版本SDK支持。
@@ -1344,7 +1434,9 @@ public Result login(@RequestBody @Validated(ValidationGroups.Insert.class) Login
 
 ![](images/Snipaste_2024-01-16_09-49-00.png)
 
-Minio使用**纠删码**技术来保护数据，它是一种恢复丢失和损坏数据的数学算法，它将数据**分块冗余**的分散存储在各各节点的磁盘上，所有的可用磁盘组成一个集合，上图由8块硬盘组成一个集合，当上传一个文件时会通过纠删码算法计算对文件进行分块存储，除了**将文件本身分成4个数据块，还会生成4个校验块**，**数据块和校验块会分散的存储在这8块硬盘上。**使用纠删码的好处是**即便丢失一半数量（N/2）的硬盘，仍然可以恢复数据**。
+Minio使用**纠删码**技术来保护数据，它是一种恢复丢失和损坏数据的数学算法，它将数据**分块冗余**
+的分散存储在各各节点的磁盘上，所有的可用磁盘组成一个集合，上图由8块硬盘组成一个集合，当上传一个文件时会通过纠删码算法计算对文件进行分块存储，除了**将文件本身分成4个数据块，还会生成4个校验块**，**
+数据块和校验块会分散的存储在这8块硬盘上。**使用纠删码的好处是**即便丢失一半数量（N/2）的硬盘，仍然可以恢复数据**。
 
 ### 项目配置
 
@@ -1628,30 +1720,30 @@ public class MinioUtil {
  */
 @PostMapping(value = "/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE) // consumes指定类型
 public Result uploadImage2Minio(@RequestParam("file") MultipartFile file,
-                                @RequestParam(value = "userId", required = false) Long userId,
-                                @RequestParam(value = "path", required = false) String path,
-                                @RequestParam(value = "objectName", required = false) String objectName) {
-    String contentType = file.getContentType();
-    // 设置参数
-    UploadFileParam uploadFileParam = new UploadFileParam();
-    uploadFileParam.setFileSize(file.getSize());
-    uploadFileParam.setContentType(contentType);
-    uploadFileParam.setFilename(file.getOriginalFilename());
-    uploadFileParam.setUserId(userId);
-    if (contentType.contains("image")) {
+@RequestParam(value = "userId", required = false) Long userId,
+@RequestParam(value = "path", required = false) String path,
+@RequestParam(value = "objectName", required = false) String objectName){
+        String contentType=file.getContentType();
+        // 设置参数
+        UploadFileParam uploadFileParam=new UploadFileParam();
+        uploadFileParam.setFileSize(file.getSize());
+        uploadFileParam.setContentType(contentType);
+        uploadFileParam.setFilename(file.getOriginalFilename());
+        uploadFileParam.setUserId(userId);
+        if(contentType.contains("image")){
         uploadFileParam.setFileType("image");
-    } else {
+        }else{
         uploadFileParam.setFileType("video");
-    }
-    // 调用Service服务
-    try {
-        return uploadService.uploadImage2Minio(uploadFileParam, file.getBytes(), path, objectName);
-    } catch (Exception e) {
+        }
+        // 调用Service服务
+        try{
+        return uploadService.uploadImage2Minio(uploadFileParam,file.getBytes(),path,objectName);
+        }catch(Exception e){
         log.error("文件上传过程中出错");
         e.printStackTrace();
-    }
-    return Result.fail("文件上传过程中出错");
-}
+        }
+        return Result.fail("文件上传过程中出错");
+        }
 ```
 
 ### IUploadService实现类
@@ -1669,36 +1761,36 @@ public Result uploadImage2Minio(@RequestParam("file") MultipartFile file,
  * @return
  */
 @Override
-public Result uploadImage2Minio(UploadFileParam uploadFileParam, byte[] fileBytes, String path, String objectName) {
-    // 如果为空，就使用默认路径；不为空，则路径最后要加上"/"
-    if (!StringUtils.hasText(path)) {
-        path = MinioUtil.getImageFolderPathByData(new Date(), true, true, true);
-    } else if (!path.contains("/")) {
-        path += "/";
-    }
-    // 获取文件MD5值
-    String md5Hex = DigestUtil.md5Hex(fileBytes);
-    // 得到文件名
-    String filename = uploadFileParam.getFilename();
-    // 构造 objectName
-    if (!StringUtils.hasText(objectName)) {
-        objectName = md5Hex + filename.substring(filename.lastIndexOf("."));
-    }
-    objectName = path + objectName;
-    // 上传
-    try {
+public Result uploadImage2Minio(UploadFileParam uploadFileParam,byte[]fileBytes,String path,String objectName){
+        // 如果为空，就使用默认路径；不为空，则路径最后要加上"/"
+        if(!StringUtils.hasText(path)){
+        path=MinioUtil.getImageFolderPathByData(new Date(),true,true,true);
+        }else if(!path.contains("/")){
+        path+="/";
+        }
+        // 获取文件MD5值
+        String md5Hex=DigestUtil.md5Hex(fileBytes);
+        // 得到文件名
+        String filename=uploadFileParam.getFilename();
+        // 构造 objectName
+        if(!StringUtils.hasText(objectName)){
+        objectName=md5Hex+filename.substring(filename.lastIndexOf("."));
+        }
+        objectName=path+objectName;
+        // 上传
+        try{
         // 保存到MinIO
-        MinioUtil.addFile2Minio(minioClient, fileBytes, mediaFilesBucket, objectName);
+        MinioUtil.addFile2Minio(minioClient,fileBytes,mediaFilesBucket,objectName);
         // 保存文件信息到数据库【事务优化:注意Spring事务和MySQL事务】
-        IUploadService uploadService = (IUploadService) AopContext.currentProxy();
-        uploadService.addFile2Db(md5Hex, uploadFileParam, mediaFilesBucket, objectName);
+        IUploadService uploadService=(IUploadService)AopContext.currentProxy();
+        uploadService.addFile2Db(md5Hex,uploadFileParam,mediaFilesBucket,objectName);
 
         return Result.ok("上传文件成功");
-    } catch (Exception e) {
-        log.error("文件上传失败", e);
-    }
-    return Result.fail("上传文件失败");
-}
+        }catch(Exception e){
+        log.error("文件上传失败",e);
+        }
+        return Result.fail("上传文件失败");
+        }
 
 /**
  * 将文件信息存入数据库中
@@ -1710,49 +1802,52 @@ public Result uploadImage2Minio(UploadFileParam uploadFileParam, byte[] fileByte
  */
 @Override
 @Transactional
-public UploadFile addFile2Db(String md5Hex, UploadFileParam uploadFileParam, String bucket, String objectName) {
-    // 扩展名
-    String extension = null;
-    if (objectName.contains(".")) {
-        extension = objectName.substring(objectName.lastIndexOf("."));
-    }
-    // 获取扩展名对应的媒体类型
-    String contentType = MinioUtil.getMimeTypeByExtension(extension);
-    // 从数据库查询文件
-    int count = query().eq("id", md5Hex).count();
-    // 没查到就写入数据库
-    if (count <= 0) {
-        UploadFile uploadFile = new UploadFile();
+public UploadFile addFile2Db(String md5Hex,UploadFileParam uploadFileParam,String bucket,String objectName){
+        // 扩展名
+        String extension=null;
+        if(objectName.contains(".")){
+        extension=objectName.substring(objectName.lastIndexOf("."));
+        }
+        // 获取扩展名对应的媒体类型
+        String contentType=MinioUtil.getMimeTypeByExtension(extension);
+        // 从数据库查询文件
+        int count=query().eq("id",md5Hex).count();
+        // 没查到就写入数据库
+        if(count<=0){
+        UploadFile uploadFile=new UploadFile();
         // 拷贝基本信息
         uploadFile.setId(md5Hex);
         uploadFile.setFileId(md5Hex);
         uploadFile.setUserId(uploadFileParam.getUserId());
         uploadFile.setFilePath(objectName);
         // 图片、mp4视频可以直接设置url
-        if (contentType.contains("image") || contentType.contains("mp4")) {
-            uploadFile.setUrl("/" + bucket + "/" + objectName);
+        if(contentType.contains("image")||contentType.contains("mp4")){
+        uploadFile.setUrl("/"+bucket+"/"+objectName);
         }
         uploadFile.setBucket(bucket);
         // 插入数据库
-        boolean save = save(uploadFile);
-        if (!save) {
-            BusinessException.throwException("文件信息保存失败");
+        boolean save=save(uploadFile);
+        if(!save){
+        BusinessException.throwException("文件信息保存失败");
         }
         // TODO 若要对视频进行转码，添加到 数据库的待处理任务表
-        
+
         return uploadFile;
-    }
-    return null;
-}
+        }
+        return null;
+        }
 ```
 
 ## 4.上传视频大文件
 
 ### 断点续传
 
-通常视频文件都比较大，所以对于媒资系统上传文件的需求要满足大文件的上传要求。**http协议本身对上传文件大小没有限制**，但是客户的网络环境质量、电脑硬件环境等参差不齐，**如果一个大文件快上传完了网断了没有上传完成，需要客户重新上传，用户体验非常差，所以对于大文件上传的要求最基本的是断点续传**。
+通常视频文件都比较大，所以对于媒资系统上传文件的需求要满足大文件的上传要求。**http协议本身对上传文件大小没有限制**，但是客户的网络环境质量、电脑硬件环境等参差不齐，**
+如果一个大文件快上传完了网断了没有上传完成，需要客户重新上传，用户体验非常差，所以对于大文件上传的要求最基本的是断点续传**。
 
-什么是断点续传：断点续传指的是在下载或上传时，**将下载或上传任务（一个文件或一个压缩包）人为的划分为几个部分，每一个部分采用一个线程进行上传或下载，如果碰到网络故障，可以从已经上传或下载的部分开始继续上传下载未完成的部分，而没有必要从头开始上传下载**，断点续传可以提高节省操作时间，提高用户体验性。 
+什么是断点续传：断点续传指的是在下载或上传时，**
+将下载或上传任务（一个文件或一个压缩包）人为的划分为几个部分，每一个部分采用一个线程进行上传或下载，如果碰到网络故障，可以从已经上传或下载的部分开始继续上传下载未完成的部分，而没有必要从头开始上传下载**
+，断点续传可以提高节省操作时间，提高用户体验性。
 
 ![](images/Snipaste_2024-01-17_12-37-25.png)
 
@@ -1777,9 +1872,9 @@ public UploadFile addFile2Db(String md5Hex, UploadFileParam uploadFileParam, Str
  * @return
  */
 @PostMapping("/checkfile")
-public Result checkFile(@RequestParam("fileMd5") String fileMd5) {
-    return uploadService.checkFile(fileMd5);
-}
+public Result checkFile(@RequestParam("fileMd5") String fileMd5){
+        return uploadService.checkFile(fileMd5);
+        }
 
 /**
  * （2）检测分块
@@ -1790,9 +1885,9 @@ public Result checkFile(@RequestParam("fileMd5") String fileMd5) {
  */
 @PostMapping("/checkchunks")
 public Result checkChunks(@RequestParam("fileMd5") String fileMd5,
-                          @RequestParam("chunk") int chunk) {
-    return uploadService.checkChunks(fileMd5, chunk);
-}
+@RequestParam("chunk") int chunk){
+        return uploadService.checkChunks(fileMd5,chunk);
+        }
 
 /**
  * （3）上传分块
@@ -1805,10 +1900,10 @@ public Result checkChunks(@RequestParam("fileMd5") String fileMd5,
  */
 @PostMapping("/uploadchunks")
 public Result uploadChunks(@RequestParam("file") MultipartFile file,
-                           @RequestParam("fileMd5") String fileMd5,
-                           @RequestParam("chunk") int chunk) throws Exception {
-    return uploadService.uploadChunks(fileMd5, chunk, file.getBytes());
-}
+@RequestParam("fileMd5") String fileMd5,
+@RequestParam("chunk") int chunk)throws Exception{
+        return uploadService.uploadChunks(fileMd5,chunk,file.getBytes());
+        }
 
 /**
  * （4）合并分块
@@ -1820,13 +1915,13 @@ public Result uploadChunks(@RequestParam("file") MultipartFile file,
  */
 @PostMapping("/mergechunks")
 public Result mergeChunks(@RequestParam("fileMd5") String fileMd5,
-                          @RequestParam("fileName") String fileName,
-                          @RequestParam("chunkTotal") int chunkTotal) {
-    UploadFileParam uploadFileParam = new UploadFileParam();
-    uploadFileParam.setFileType("video");
-    uploadFileParam.setFilename(fileName);
-    return uploadService.mergeChunks(fileMd5, chunkTotal, uploadFileParam);
-}
+@RequestParam("fileName") String fileName,
+@RequestParam("chunkTotal") int chunkTotal){
+        UploadFileParam uploadFileParam=new UploadFileParam();
+        uploadFileParam.setFileType("video");
+        uploadFileParam.setFilename(fileName);
+        return uploadService.mergeChunks(fileMd5,chunkTotal,uploadFileParam);
+        }
 ```
 
 ### IUploadService实现类
@@ -1841,75 +1936,75 @@ public Result mergeChunks(@RequestParam("fileMd5") String fileMd5,
  * @return
  */
 @Override
-public Result mergeChunks(String fileMd5, int chunkTotal, UploadFileParam uploadFileParam) {
-    // 拿到所有分块
-    File[] chunkFiles = MinioUtil.mergeCheckChunks(minioClient, fileMd5, chunkTotal, videoFilesBucket);
-    // 文件扩展名
-    String filename = uploadFileParam.getFilename();
-    String extension = filename.substring(filename.lastIndexOf("."));
-    // 创建临时合并文件
-    File mergeFile;
-    try {
-        mergeFile = File.createTempFile(fileMd5, extension);
-    } catch (Exception e) {
+public Result mergeChunks(String fileMd5,int chunkTotal,UploadFileParam uploadFileParam){
+        // 拿到所有分块
+        File[]chunkFiles=MinioUtil.mergeCheckChunks(minioClient,fileMd5,chunkTotal,videoFilesBucket);
+        // 文件扩展名
+        String filename=uploadFileParam.getFilename();
+        String extension=filename.substring(filename.lastIndexOf("."));
+        // 创建临时合并文件
+        File mergeFile;
+        try{
+        mergeFile=File.createTempFile(fileMd5,extension);
+        }catch(Exception e){
         throw new BusinessException("合并文件过程中创建临时文件出错");
-    }
-    // 合并流程
-    try {
-        //（1）开始合并
-        byte[] buffer = new byte[1024];
-        try (RandomAccessFile rw = new RandomAccessFile(mergeFile, "rw")) {
-            // 遍历分块
-            for (File chunkFile : chunkFiles) {
-                FileInputStream inputStream = new FileInputStream(chunkFile);
-                int len;
-                while ((len = inputStream.read(buffer)) != -1) {
-                    // 写入临时文件
-                    rw.write(buffer, 0, len);
-                }
-                inputStream.close();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw new BusinessException("合并文件过程中出错");
         }
-        log.debug("合并文件完成{}", mergeFile.getAbsolutePath());
+        // 合并流程
+        try{
+        //（1）开始合并
+        byte[]buffer=new byte[1024];
+        try(RandomAccessFile rw=new RandomAccessFile(mergeFile,"rw")){
+        // 遍历分块
+        for(File chunkFile:chunkFiles){
+        FileInputStream inputStream=new FileInputStream(chunkFile);
+        int len;
+        while((len=inputStream.read(buffer))!=-1){
+        // 写入临时文件
+        rw.write(buffer,0,len);
+        }
+        inputStream.close();
+        }
+        }catch(Exception e){
+        e.printStackTrace();
+        throw new BusinessException("合并文件过程中出错");
+        }
+        log.debug("合并文件完成{}",mergeFile.getAbsolutePath());
         uploadFileParam.setFileSize(mergeFile.length());
         //（2）校验文件内容，通过 md5 对比
-        try (FileInputStream inputStream = new FileInputStream(mergeFile)) {
-            String md5Hex = DigestUtil.md5Hex(inputStream);
-            if (!fileMd5.equalsIgnoreCase(md5Hex)) {
-                throw new BusinessException("合并文件校验失败");
-            }
-            log.debug("合并文件校验通过 {}", mergeFile.getAbsolutePath());
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw new BusinessException("合并文件校验异常");
+        try(FileInputStream inputStream=new FileInputStream(mergeFile)){
+        String md5Hex=DigestUtil.md5Hex(inputStream);
+        if(!fileMd5.equalsIgnoreCase(md5Hex)){
+        throw new BusinessException("合并文件校验失败");
+        }
+        log.debug("合并文件校验通过 {}",mergeFile.getAbsolutePath());
+        }catch(Exception e){
+        e.printStackTrace();
+        throw new BusinessException("合并文件校验异常");
         }
         //（3）合并临时文件重新上传到MinIO
-        String mergeFilePath = MinioUtil.getFilePathByMd5(fileMd5, extension);
-        try {
-            MinioUtil.addFile2MinioByPath(minioClient, mergeFile.getAbsolutePath(), videoFilesBucket, mergeFilePath);
-            log.debug("合并文件上传 MinIO 完成：{}", mergeFile.getAbsolutePath());
-        } catch (Exception e) {
-            throw new BusinessException("合并文件时上传文件出错");
+        String mergeFilePath=MinioUtil.getFilePathByMd5(fileMd5,extension);
+        try{
+        MinioUtil.addFile2MinioByPath(minioClient,mergeFile.getAbsolutePath(),videoFilesBucket,mergeFilePath);
+        log.debug("合并文件上传 MinIO 完成：{}",mergeFile.getAbsolutePath());
+        }catch(Exception e){
+        throw new BusinessException("合并文件时上传文件出错");
         }
         //（4）上传到数据库
-        IUploadService uploadService = (IUploadService) AopContext.currentProxy();
-        UploadFile uploadFile = uploadService.addFile2Db(fileMd5, uploadFileParam, videoFilesBucket, mergeFilePath);
-        if (uploadFile == null) {
-            throw new BusinessException("文件入库出错");
+        IUploadService uploadService=(IUploadService)AopContext.currentProxy();
+        UploadFile uploadFile=uploadService.addFile2Db(fileMd5,uploadFileParam,videoFilesBucket,mergeFilePath);
+        if(uploadFile==null){
+        throw new BusinessException("文件入库出错");
         }
         return Result.ok();
-    } finally {
+        }finally{
         // 删除临时文件
-        for (File chunkFile : chunkFiles) {
-            chunkFile.delete();
+        for(File chunkFile:chunkFiles){
+        chunkFile.delete();
         }
         mergeFile.delete();
         log.debug("临时文件清理完毕");
-    }
-}
+        }
+        }
 
 /**
  * （3）上传分块
@@ -1920,21 +2015,21 @@ public Result mergeChunks(String fileMd5, int chunkTotal, UploadFileParam upload
  * @return
  */
 @Override
-public Result uploadChunks(String fileMd5, int chunk, byte[] bytes) {
-    // 得到分块文件的目录路径
-    String chunksFolderPath = MinioUtil.getChunksFolderPath(fileMd5);
-    // 得到分块文件的路径
-    String chunksPath = chunksFolderPath + chunk;
-    // 存储到Minio
-    try {
-        MinioUtil.addFile2Minio(minioClient, bytes, mediaFilesBucket, chunksPath);
-        log.info("上传分块成功：{}", chunksPath);
+public Result uploadChunks(String fileMd5,int chunk,byte[]bytes){
+        // 得到分块文件的目录路径
+        String chunksFolderPath=MinioUtil.getChunksFolderPath(fileMd5);
+        // 得到分块文件的路径
+        String chunksPath=chunksFolderPath+chunk;
+        // 存储到Minio
+        try{
+        MinioUtil.addFile2Minio(minioClient,bytes,mediaFilesBucket,chunksPath);
+        log.info("上传分块成功：{}",chunksPath);
         return Result.ok("上传分块成功");
-    } catch (Exception e) {
-        log.error("上传分块文件：{}，失败。", chunksPath, e);
-    }
-    return Result.fail("上传分块失败");
-}
+        }catch(Exception e){
+        log.error("上传分块文件：{}，失败。",chunksPath,e);
+        }
+        return Result.fail("上传分块失败");
+        }
 
 /**
  * （2）检测分块
@@ -1944,29 +2039,29 @@ public Result uploadChunks(String fileMd5, int chunk, byte[] bytes) {
  * @return
  */
 @Override
-public Result checkChunks(String fileMd5, int chunkIdx) {
-    // 分块文件所在目录
-    String chunksFolderPath = MinioUtil.getChunksFolderPath(fileMd5);
-    // 分块文件的路径
-    String chunksPath = chunksFolderPath + chunkIdx;
-    // 查询文件系统是否存在
-    GetObjectArgs args = GetObjectArgs.builder()
-            .bucket(videoFilesBucket)
-            .object(chunksPath)
-            .build();
-    try {
-        InputStream inputStream = minioClient.getObject(args);
-        if (inputStream == null) {
-            // 文件不存在
-            return Result.ok("文件不存在，可以上传");
-        }
-    } catch (Exception e) {
+public Result checkChunks(String fileMd5,int chunkIdx){
+        // 分块文件所在目录
+        String chunksFolderPath=MinioUtil.getChunksFolderPath(fileMd5);
+        // 分块文件的路径
+        String chunksPath=chunksFolderPath+chunkIdx;
+        // 查询文件系统是否存在
+        GetObjectArgs args=GetObjectArgs.builder()
+        .bucket(videoFilesBucket)
+        .object(chunksPath)
+        .build();
+        try{
+        InputStream inputStream=minioClient.getObject(args);
+        if(inputStream==null){
         // 文件不存在
         return Result.ok("文件不存在，可以上传");
-    }
-    // 文件已存在
-    return Result.ok("文件已经存在，不需要重复上传");
-}
+        }
+        }catch(Exception e){
+        // 文件不存在
+        return Result.ok("文件不存在，可以上传");
+        }
+        // 文件已存在
+        return Result.ok("文件已经存在，不需要重复上传");
+        }
 
 /**
  * （1）检测文件是否完整
@@ -1975,31 +2070,31 @@ public Result checkChunks(String fileMd5, int chunkIdx) {
  * @return
  */
 @Override
-public Result checkFile(String fileMd5) {
-    // 在文件表中存在，并且在文件系统中存在，此文件才存在
-    List<UploadFile> files = query().eq("id", fileMd5).list();
-    if (files == null || files.size() == 0) {
+public Result checkFile(String fileMd5){
+        // 在文件表中存在，并且在文件系统中存在，此文件才存在
+        List<UploadFile> files=query().eq("id",fileMd5).list();
+        if(files==null||files.size()==0){
         return Result.ok("文件不存在，可以上传");
-    }
-    // 查询文件系统中是否存在
-    UploadFile uploadFile = files.get(0);
-    GetObjectArgs args = GetObjectArgs.builder()
-            .bucket(uploadFile.getBucket())
-            .object(uploadFile.getFilePath())
-            .build();
-    try {
-        InputStream inputStream = minioClient.getObject(args);
-        if (inputStream == null) {
-            // 文件不存在
-            return Result.ok("文件不存在，可以上传");
         }
-    } catch (Exception e) {
+        // 查询文件系统中是否存在
+        UploadFile uploadFile=files.get(0);
+        GetObjectArgs args=GetObjectArgs.builder()
+        .bucket(uploadFile.getBucket())
+        .object(uploadFile.getFilePath())
+        .build();
+        try{
+        InputStream inputStream=minioClient.getObject(args);
+        if(inputStream==null){
         // 文件不存在
         return Result.ok("文件不存在，可以上传");
-    }
-    // 文件已存在
-    return Result.ok("文件已经存在，不需要重复上传");
-}
+        }
+        }catch(Exception e){
+        // 文件不存在
+        return Result.ok("文件不存在，可以上传");
+        }
+        // 文件已存在
+        return Result.ok("文件已经存在，不需要重复上传");
+        }
 ```
 
 # 13.定时任务调度
@@ -2008,11 +2103,11 @@ public Result checkFile(String fileMd5) {
 
 ## 1.分布式任务调度
 
-参考：[扫盲篇-什么是分布式任务调度 - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/136843131) 
+参考：[扫盲篇-什么是分布式任务调度 - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/136843131)
 
-​	   [阿里二面：请讲明白什么是分布式任务调度？_wx60fa94429a80e的技术博客_51CTO博客](https://blog.51cto.com/u_15311952/3186095) 
+​       [阿里二面：请讲明白什么是分布式任务调度？_wx60fa94429a80e的技术博客_51CTO博客](https://blog.51cto.com/u_15311952/3186095)
 
-​	   [实现一个任务调度系统，看这篇就够了 - 掘金 (juejin.cn)](https://juejin.cn/post/7056704703559630856#heading-5) 
+​       [实现一个任务调度系统，看这篇就够了 - 掘金 (juejin.cn)](https://juejin.cn/post/7056704703559630856#heading-5)
 
 如何去高效处理一批任务：
 
@@ -2054,17 +2149,17 @@ public Result checkFile(String fileMd5) {
 
 ### 原理与配置
 
-参考：[XXL-JOB分布式任务调度平台(真·保姆级教程) - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/514114395) 
+参考：[XXL-JOB分布式任务调度平台(真·保姆级教程) - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/514114395)
 
-​	   [xxl-job搭建、部署、SpringBoot集成xxl-job - lcl-mm - 博客园 (cnblogs.com)](https://www.cnblogs.com/liconglong/p/11753147.html) 
+​       [xxl-job搭建、部署、SpringBoot集成xxl-job - lcl-mm - 博客园 (cnblogs.com)](https://www.cnblogs.com/liconglong/p/11753147.html)
 
-​	   [一文带你搞懂xxl-job（分布式任务调度平台） - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/625060354) 
+​       [一文带你搞懂xxl-job（分布式任务调度平台） - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/625060354)
 
-​	   [XXL-Job学习笔记_xxl.job.executor.logpath-CSDN博客](https://blog.csdn.net/m0_37647376/article/details/126820981) 
+​       [XXL-Job学习笔记_xxl.job.executor.logpath-CSDN博客](https://blog.csdn.net/m0_37647376/article/details/126820981)
 
-​	   [XXL-JOB定时任务调度平台原理-腾讯云开发者社区-腾讯云 (tencent.com)](https://cloud.tencent.com/developer/article/1873194) 
+​       [XXL-JOB定时任务调度平台原理-腾讯云开发者社区-腾讯云 (tencent.com)](https://cloud.tencent.com/developer/article/1873194)
 
-​	   [XXL-job原理 - 掘金 (juejin.cn)](https://juejin.cn/post/6999234357818834974) 
+​       [XXL-job原理 - 掘金 (juejin.cn)](https://juejin.cn/post/6999234357818834974)
 
 ### application.properties
 
@@ -2157,7 +2252,7 @@ public class XxlJobConfig {
 
 分片广播：广播触发对应集群中所有机器执行一次任务，同时系统自动传递分片参数；可根据分片参数开发分片任务。
 
-参考：[分布式任务处理：XXL-JOB分布式任务调度框架（三）-阿里云开发者社区 (aliyun.com)](https://developer.aliyun.com/article/1266475) 
+参考：[分布式任务处理：XXL-JOB分布式任务调度框架（三）-阿里云开发者社区 (aliyun.com)](https://developer.aliyun.com/article/1266475)
 
 ### 分片方案
 
@@ -2165,9 +2260,9 @@ public class XxlJobConfig {
 
 每个执行器收到广播任务有两个参数：分片总数、分片序号。每个执行从数据表取任务时可以让任务id 模上 分片总数（取余），如果等于分片序号则执行此任务。上边两个执行器实例那么分片总数为2，序号为0、1，从任务1开始，如下：
 
-- 1  %  2 = 1    执行器2执行
-- 2  %  2 =  0    执行器1执行
-- 3  %  2 =  1     执行器2执行
+- 1 % 2 = 1 执行器2执行
+- 2 % 2 = 0 执行器1执行
+- 3 % 2 = 1 执行器2执行
 - 以此类推.
 
 ### 任务不重复执行
@@ -2175,12 +2270,12 @@ public class XxlJobConfig {
 通过作业分片方案保证了执行器之间查询到不重复的任务，如果一个执行器在处理一个视频还没有完成，此时调度中心又一次请求调度，为了不重复处理同一个该怎么办
 
 - 调度过期策略：调度中心错过调度时间的补偿处理策略，包括：忽略、立即补偿触发一次等；
-  - 忽略：调度过期后，忽略过期的任务，从当前时间开始重新计算下次触发时间；
-  - 立即执行一次：调度过期后，立即执行一次，并从当前时间开始重新计算下次触发时间；
+    - 忽略：调度过期后，忽略过期的任务，从当前时间开始重新计算下次触发时间；
+    - 立即执行一次：调度过期后，立即执行一次，并从当前时间开始重新计算下次触发时间；
 - 阻塞处理策略：调度过于密集执行器来不及处理时的处理策略；
-  - 单机串行（默认）：调度请求进入单机执行器后，调度请求进入FIFO队列并以串行方式运行
-  - 丢弃后续调度：调度请求进入单机执行器后，发现执行器存在运行的调度任务，本次请求将会被丢弃并标记为失败
-  - 覆盖之前调度：调度请求进入单机执行器后，发现执行器存在运行的调度任务，将会终止运行中的调度任务并清空队列，然后运行本地调度任务
+    - 单机串行（默认）：调度请求进入单机执行器后，调度请求进入FIFO队列并以串行方式运行
+    - 丢弃后续调度：调度请求进入单机执行器后，发现执行器存在运行的调度任务，本次请求将会被丢弃并标记为失败
+    - 覆盖之前调度：调度请求进入单机执行器后，发现执行器存在运行的调度任务，将会终止运行中的调度任务并清空队列，然后运行本地调度任务
 
 只做这些配置可以保证任务不会重复执行吗？做不到，还需要保证任务处理的幂等性。**什么是任务的幂等性？**任务的幂等性是指：**对于数据的操作不论多少次，操作的结果始终是一致的。**
 
@@ -2197,9 +2292,9 @@ public class XxlJobConfig {
 
 ###缓存预热
 
-缓存预热：[Redis系列 | 缓存穿透、击穿、雪崩、预热、更新、降级-腾讯云开发者社区-腾讯云 (tencent.com)](https://cloud.tencent.com/developer/article/1666384) 
+缓存预热：[Redis系列 | 缓存穿透、击穿、雪崩、预热、更新、降级-腾讯云开发者社区-腾讯云 (tencent.com)](https://cloud.tencent.com/developer/article/1666384)
 
-​	 	  [(2 封私信 / 80 条消息) 关于 Redis 缓存预热你有哪些思考？ - 知乎 (zhihu.com)](https://www.zhihu.com/question/484000892) 
+​          [(2 封私信 / 80 条消息) 关于 Redis 缓存预热你有哪些思考？ - 知乎 (zhihu.com)](https://www.zhihu.com/question/484000892)
 
 CacheXxlJob
 
@@ -2255,21 +2350,21 @@ public class CacheXxlJob {
 
 ### 分布式事务
 
-详情可以看  **14.分布式事务** 
+详情可以看  **15.分布式事务**
 
 #14.Elasticsearch
 
-参考：[Linux安装Elasticsearch(手把手入门教程及下载资源)_xu'ni'jelasticsearch下载和安装-CSDN博客](https://blog.csdn.net/qq_45502336/article/details/122023493) 
+参考：[Linux安装Elasticsearch(手把手入门教程及下载资源)_xu'ni'jelasticsearch下载和安装-CSDN博客](https://blog.csdn.net/qq_45502336/article/details/122023493)
 
-​	   [Linux环境下安装Elasticsearch，史上最详细的教程来啦~_linux elasticsearch-CSDN博客](https://blog.csdn.net/smilehappiness/article/details/118466378) 
+​       [Linux环境下安装Elasticsearch，史上最详细的教程来啦~_linux elasticsearch-CSDN博客](https://blog.csdn.net/smilehappiness/article/details/118466378)
 
-​	   [CentOS7下安装elastic search错误记录_seccomp unavailable: 'i386' architecture unsupport-CSDN博客](https://blog.csdn.net/liu1160848595/article/details/102859967) 
+​       [CentOS7下安装elastic search错误记录_seccomp unavailable: 'i386' architecture unsupport-CSDN博客](https://blog.csdn.net/liu1160848595/article/details/102859967)
 
-​	   [Linux下Kibana的安装、配置及开机自启动-阿里云开发者社区 (aliyun.com)](https://developer.aliyun.com/article/789870) 
+​       [Linux下Kibana的安装、配置及开机自启动-阿里云开发者社区 (aliyun.com)](https://developer.aliyun.com/article/789870)
 
-​	   [Elasticsearch写入流程 - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/497735811) 
+​       [Elasticsearch写入流程 - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/497735811)
 
-视频学习：[【黑马java】ElasticSearch教程入门到精通_哔哩哔哩_bilibili](https://www.bilibili.com/video/BV1Gh411j7d6/?spm_id_from=333.337.search-card.all.click&vd_source=133a9b44f0ebb54b7863b9875a354607) 
+视频学习：[【黑马java】ElasticSearch教程入门到精通_哔哩哔哩_bilibili](https://www.bilibili.com/video/BV1Gh411j7d6/?spm_id_from=333.337.search-card.all.click&vd_source=133a9b44f0ebb54b7863b9875a354607)
 
 ## 1.添加索引库
 
@@ -2448,13 +2543,13 @@ public class SearchServiceImpl implements ISearchService {
 
 # 15.分布式事务
 
-参考：[分布式事务有这一篇就够了！ - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/263555694) 
+参考：[分布式事务有这一篇就够了！ - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/263555694)
 
-​	   [彻底搞清楚什么是分布式事务 - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/98393002#:~:text=%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E4%BC%9A%E6%8A%8A%E4%B8%80%E4%B8%AA%E5%BA%94%E7%94%A8%E7%B3%BB%E7%BB%9F%E6%8B%86%E5%88%86%E4%B8%BA%E5%8F%AF%E7%8B%AC%E7%AB%8B%E9%83%A8%E7%BD%B2%E7%9A%84%E5%A4%9A%E4%B8%AA%E6%9C%8D%E5%8A%A1%EF%BC%8C%E5%9B%A0%E6%AD%A4%E9%9C%80%E8%A6%81%E6%9C%8D%E5%8A%A1%E4%B8%8E%E6%9C%8D%E5%8A%A1%E4%B9%8B%E9%97%B4%E8%BF%9C%E7%A8%8B%E5%8D%8F%E4%BD%9C%E6%89%8D%E8%83%BD%E5%AE%8C%E6%88%90%E4%BA%8B%E5%8A%A1%E6%93%8D%E4%BD%9C%EF%BC%8C%E8%BF%99%E7%A7%8D%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E7%8E%AF%E5%A2%83%E4%B8%8B%E7%94%B1%E4%B8%8D%E5%90%8C%E7%9A%84%E6%9C%8D%E5%8A%A1%E4%B9%8B%E9%97%B4%E9%80%9A%E8%BF%87%E7%BD%91%E7%BB%9C%E8%BF%9C%E7%A8%8B%E5%8D%8F%E4%BD%9C%E5%AE%8C%E6%88%90%E4%BA%8B%E5%8A%A1%E7%A7%B0%E4%B9%8B%E4%B8%BA,%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1%20%EF%BC%8C%E4%BE%8B%E5%A6%82%E7%94%A8%E6%88%B7%E6%B3%A8%E5%86%8C%E9%80%81%E7%A7%AF%E5%88%86%E4%BA%8B%E5%8A%A1%E3%80%81%E5%88%9B%E5%BB%BA%E8%AE%A2%E5%8D%95%E5%87%8F%E5%BA%93%E5%AD%98%E4%BA%8B%E5%8A%A1%EF%BC%8C%E9%93%B6%E8%A1%8C%E8%BD%AC%E8%B4%A6%E4%BA%8B%E5%8A%A1%E7%AD%89%E9%83%BD%E6%98%AF%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1%E3%80%82) 
+​       [彻底搞清楚什么是分布式事务 - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/98393002#:~:text=%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E4%BC%9A%E6%8A%8A%E4%B8%80%E4%B8%AA%E5%BA%94%E7%94%A8%E7%B3%BB%E7%BB%9F%E6%8B%86%E5%88%86%E4%B8%BA%E5%8F%AF%E7%8B%AC%E7%AB%8B%E9%83%A8%E7%BD%B2%E7%9A%84%E5%A4%9A%E4%B8%AA%E6%9C%8D%E5%8A%A1%EF%BC%8C%E5%9B%A0%E6%AD%A4%E9%9C%80%E8%A6%81%E6%9C%8D%E5%8A%A1%E4%B8%8E%E6%9C%8D%E5%8A%A1%E4%B9%8B%E9%97%B4%E8%BF%9C%E7%A8%8B%E5%8D%8F%E4%BD%9C%E6%89%8D%E8%83%BD%E5%AE%8C%E6%88%90%E4%BA%8B%E5%8A%A1%E6%93%8D%E4%BD%9C%EF%BC%8C%E8%BF%99%E7%A7%8D%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E7%8E%AF%E5%A2%83%E4%B8%8B%E7%94%B1%E4%B8%8D%E5%90%8C%E7%9A%84%E6%9C%8D%E5%8A%A1%E4%B9%8B%E9%97%B4%E9%80%9A%E8%BF%87%E7%BD%91%E7%BB%9C%E8%BF%9C%E7%A8%8B%E5%8D%8F%E4%BD%9C%E5%AE%8C%E6%88%90%E4%BA%8B%E5%8A%A1%E7%A7%B0%E4%B9%8B%E4%B8%BA,%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1%20%EF%BC%8C%E4%BE%8B%E5%A6%82%E7%94%A8%E6%88%B7%E6%B3%A8%E5%86%8C%E9%80%81%E7%A7%AF%E5%88%86%E4%BA%8B%E5%8A%A1%E3%80%81%E5%88%9B%E5%BB%BA%E8%AE%A2%E5%8D%95%E5%87%8F%E5%BA%93%E5%AD%98%E4%BA%8B%E5%8A%A1%EF%BC%8C%E9%93%B6%E8%A1%8C%E8%BD%AC%E8%B4%A6%E4%BA%8B%E5%8A%A1%E7%AD%89%E9%83%BD%E6%98%AF%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1%E3%80%82)
 
-​	   [七种常见分布式事务详解（2PC、3PC、TCC、Saga、本地事务表、MQ事务消息、最大努力通知）-CSDN博客](https://blog.csdn.net/a745233700/article/details/122402303) 
+​       [七种常见分布式事务详解（2PC、3PC、TCC、Saga、本地事务表、MQ事务消息、最大努力通知）-CSDN博客](https://blog.csdn.net/a745233700/article/details/122402303)
 
-​	   [Linux安装Kibana详细教程-CSDN博客](https://blog.csdn.net/qq_29917503/article/details/126768884) 
+​       [Linux安装Kibana详细教程-CSDN博客](https://blog.csdn.net/qq_29917503/article/details/126768884)
 
 ##1.介绍
 
@@ -2462,8 +2557,8 @@ public class SearchServiceImpl implements ISearchService {
 
 **首先理解什么是本地事务？**
 
-1. 平常我们在程序中**通过spring去控制事务是利用数据库本身的事务特性来实现的**，因此叫数据库事务，由于应用主要靠关系数据库来控制事务，此数据库只属于该应用，所以基于本应用自己的关系型数据库的事务又被称为本地事务。 
-2. **本地事务具有ACID四大特性**，数据库事务在实现时会将一次事务涉及的所有操作全部纳入到一个不可分割的执行单元，该执行单元中的所有操作 要么都成功，要么都失败，只要其中任一操作执行失败，都将导致整个事务的回滚。 
+1. 平常我们在程序中**通过spring去控制事务是利用数据库本身的事务特性来实现的**，因此叫数据库事务，由于应用主要靠关系数据库来控制事务，此数据库只属于该应用，所以基于本应用自己的关系型数据库的事务又被称为本地事务。
+2. **本地事务具有ACID四大特性**，数据库事务在实现时会将一次事务涉及的所有操作全部纳入到一个不可分割的执行单元，该执行单元中的所有操作 要么都成功，要么都失败，只要其中任一操作执行失败，都将导致整个事务的回滚。
 
 **什么是分布式事务？**
 
@@ -2550,9 +2645,9 @@ BASE 是 Basically Available(**基本可用**)、Soft state(**软状态**)和 Ev
  * @return
  */
 @PostMapping
-public Result saveBlog(@RequestBody Blog blog) {
-    return blogService.saveBlog(blog);
-}
+public Result saveBlog(@RequestBody Blog blog){
+        return blogService.saveBlog(blog);
+        }
 ```
 
 #### IBlogService实现类
@@ -2566,34 +2661,34 @@ public Result saveBlog(@RequestBody Blog blog) {
  */
 @Override
 @Transactional //【本地事务】
-public Result saveBlog(Blog blog) {
-    // 获取登录用户
-    UserDTO user = UserHolder.getUser();
-    blog.setUserId(user.getId());
-    // 【本地事务】保存探店博文到数据库
-    boolean isSuccess = save(blog);
-    if (!isSuccess) {
+public Result saveBlog(Blog blog){
+        // 获取登录用户
+        UserDTO user=UserHolder.getUser();
+        blog.setUserId(user.getId());
+        // 【本地事务】保存探店博文到数据库
+        boolean isSuccess=save(blog);
+        if(!isSuccess){
         return Result.ok("发布动态失败");
-    }
-    // 【本地事务】写入本地消息表，以后由任务调度写入Elasticsearch
-    TimeTaskMessage message = timeTaskMessageService.addMessage("blog", String.valueOf(blog.getId()), null, null);
-    if (message == null) {
+        }
+        // 【本地事务】写入本地消息表，以后由任务调度写入Elasticsearch
+        TimeTaskMessage message=timeTaskMessageService.addMessage("blog",String.valueOf(blog.getId()),null,null);
+        if(message==null){
         throw new BusinessException("添加消息记录失败");
-    }
+        }
 
-    // 查询所有粉丝，推送笔记id
-    List<Follow> follows = followService.query().eq("follow_user_id", user.getId()).list();
-    for (Follow follow : follows) {
+        // 查询所有粉丝，推送笔记id
+        List<Follow> follows=followService.query().eq("follow_user_id",user.getId()).list();
+        for(Follow follow:follows){
         // 获取粉丝id，推送
-        Long userId = follow.getUserId();
+        Long userId=follow.getUserId();
         // 推送到redis的SortedSet，score为时间戳
-        String key = "feed:" + userId;
-        stringRedisTemplate.opsForZSet().add(key, blog.getId().toString(), System.currentTimeMillis());
-    }
+        String key="feed:"+userId;
+        stringRedisTemplate.opsForZSet().add(key,blog.getId().toString(),System.currentTimeMillis());
+        }
 
-    // 返回id
-    return Result.ok(blog.getId());
-}
+        // 返回id
+        return Result.ok(blog.getId());
+        }
 ```
 
 ### 配置XXL-JOB
@@ -2722,7 +2817,7 @@ public class TimeTaskMessage implements Serializable {
  */
 @Slf4j
 @Component
-public class ITimeTaskMessageServiceImpl extends ServiceImpl<TimeTaskMessageMapper, TimeTaskMessage> implements ITimeTaskMessageService {
+public class TimeTaskMessageServiceImpl extends ServiceImpl<TimeTaskMessageMapper, TimeTaskMessage> implements ITimeTaskMessageService {
 
     /**
      * 扫描消息表记录（分片广播）

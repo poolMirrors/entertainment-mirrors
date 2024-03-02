@@ -37,7 +37,9 @@ public class UploadController {
      */
     @PostMapping("/checkfile")
     public Result checkFile(@RequestParam("fileMd5") String fileMd5) {
-        return uploadService.checkFile(fileMd5);
+        Result result = uploadService.checkFile(fileMd5);
+        System.out.println(result);
+        return result;
     }
 
     /**
@@ -50,7 +52,9 @@ public class UploadController {
     @PostMapping("/checkchunks")
     public Result checkChunks(@RequestParam("fileMd5") String fileMd5,
                               @RequestParam("chunk") int chunk) {
-        return uploadService.checkChunks(fileMd5, chunk);
+        Result result = uploadService.checkChunks(fileMd5, chunk);
+        System.out.println(result);
+        return result;
     }
 
     /**
@@ -66,7 +70,9 @@ public class UploadController {
     public Result uploadChunks(@RequestParam("file") MultipartFile file,
                                @RequestParam("fileMd5") String fileMd5,
                                @RequestParam("chunk") int chunk) throws Exception {
-        return uploadService.uploadChunks(fileMd5, chunk, file.getBytes());
+        Result result = uploadService.uploadChunks(fileMd5, chunk, file.getBytes());
+        System.out.println(result);
+        return result;
     }
 
     /**
@@ -84,7 +90,10 @@ public class UploadController {
         UploadFileParam uploadFileParam = new UploadFileParam();
         uploadFileParam.setFileType("video");
         uploadFileParam.setFilename(fileName);
-        return uploadService.mergeChunks(fileMd5, chunkTotal, uploadFileParam);
+
+        Result result = uploadService.mergeChunks(fileMd5, chunkTotal, uploadFileParam);
+        System.out.println(result);
+        return result;
     }
 
     //---------------------------------------上传图片到MinIO----------------------------------------------------

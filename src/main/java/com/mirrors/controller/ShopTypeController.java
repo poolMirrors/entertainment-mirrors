@@ -32,6 +32,8 @@ public class ShopTypeController {
         //return Result.ok(typeList);
 
         // 2.经过redis
-        return typeService.queryTypeList();
+        Result result = typeService.queryTypeList();
+        System.out.println(result);
+        return result;
     }
 }

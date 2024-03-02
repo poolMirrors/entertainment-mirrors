@@ -40,18 +40,12 @@ public class RedisIDCreator {
         long timestamp = nowSecond - BEGIN_TIMESTAMP;
 
         // 序列号
-        // 获取当前日期，每一天都有新的起点
+        // 获取当前日期，每一天都有新的起点【重点】
         String yyyyMMdd = now.format(DateTimeFormatter.ofPattern("yyyy:MM:dd"));
         long increment = stringRedisTemplate.opsForValue().increment("icr:" + keyPrefix + ":" + yyyyMMdd);
 
         // 拼接，位运算
         return timestamp << SHIFT_LEFT_BITS | increment;
     }
-
-    //public static void main(String[] args) {
-    //    LocalDateTime time = LocalDateTime.of(2022, 1, 1, 0, 0, 0);
-    //    long second = time.toEpochSecond(ZoneOffset.UTC);
-    //    System.out.println(second);
-    //}
 
 }

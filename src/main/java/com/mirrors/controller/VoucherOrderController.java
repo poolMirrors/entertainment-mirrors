@@ -28,8 +28,10 @@ public class VoucherOrderController {
      * @return
      */
     @PostMapping("/seckill/{id}")
-    @RestrictRequest(interval = 3, count = 3000) // 限制接口访问（限流）
+    @RestrictRequest(interval = 3, count = 3000) // TODO 限制接口访问（限流）
     public Result seckillVoucher(@PathVariable("id") Long voucherId) {
-        return voucherOrderService.seckillVoucherRabbitMQ(voucherId);
+        Result result = voucherOrderService.seckillVoucherRabbitMQ(voucherId);
+        System.out.println(result);
+        return result;
     }
 }

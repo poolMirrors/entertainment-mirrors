@@ -3,7 +3,7 @@ package com.mirrors;
 import com.mirrors.entity.Shop;
 import com.mirrors.entity.TimeTaskMessage;
 import com.mirrors.mapper.TimeTaskMessageMapper;
-import com.mirrors.service.impl.ITimeTaskMessageServiceImpl;
+import com.mirrors.service.impl.TimeTaskMessageServiceImpl;
 import com.mirrors.service.impl.ShopServiceImpl;
 import com.mirrors.utils.RedisConstants;
 import com.mirrors.utils.RedisIDCreator;
@@ -32,7 +32,7 @@ public class RedisTest {
     private RedisIDCreator redisIDCreator;
 
     @Autowired
-    private ITimeTaskMessageServiceImpl service;
+    private TimeTaskMessageServiceImpl service;
 
     private ExecutorService executorService = Executors.newFixedThreadPool(500);
 

@@ -51,7 +51,7 @@ public class MqReceiver {
      * @param channel
      * @param message
      */
-    @RabbitListener(queues = MQConstants.DELAY_ORDER_DL_QUEUE, ackMode = "MANUAL") // queues 指定监听的队列名称；手动 ack
+    @RabbitListener(queues = MQConstants.DELAY_ORDER_DL_QUEUE) // queues 指定监听的队列名称；手动 ack
     public void receiveDelayOrder(@Payload MultiDelayMessage<Long> delayMessage, Channel channel, Message message) {
         log.info("接收到的延迟消息：" + delayMessage);
         try {
@@ -62,24 +62,23 @@ public class MqReceiver {
                 // TODO 实现支付服务，查询是否真的已支付
                 return;
             }
-            // 判断是否有延迟时间
+            // 判断是否还有有延迟时间
             if (delayMessage.hasNextDelay()) {
-                // 有，重发延迟
-                mqSender.sendDelayOrderMessage(delayMessage);
-
-            } else {
-                // 没有，取消订单（可以删除）；保证事务一致性
-                voucherOrderService.lambdaUpdate()
-                        .set(VoucherOrder::getStatus, 4)
-                        .eq(VoucherOrder::getId, orderId)
-                        .update();
+                mqSender.sendDelayOrderMessage(delayMessage); // 有，重发延迟
+                return;
             }
+            // 没有，取消订单（可以删除）；保证事务一致性
+            voucherOrderService.lambdaUpdate()
+                    .set(VoucherOrder::getStatus, 4)
+                    .eq(VoucherOrder::getId, orderId)
+                    .update();
+
             // TODO 恢复 MySQL库存 和 redis库存；保证事务一致性
 
             // 手动确认消费完成
-            channel.basicAck(message.getMessageProperties().getDeliveryTag(), true);
+            //channel.basicAck(message.getMessageProperties().getDeliveryTag(), true);
 
-        } catch (IOException e) {
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }

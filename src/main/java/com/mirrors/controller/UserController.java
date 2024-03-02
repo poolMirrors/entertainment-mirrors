@@ -41,7 +41,9 @@ public class UserController {
      */
     @PostMapping("/code")
     public Result sendCode(@RequestParam("phone") String phone, HttpSession session) {
-        return userService.sendCode(phone, session);
+        Result result = userService.sendCode(phone, session);
+        System.out.println(result);
+        return result;
     }
 
     /**
@@ -53,7 +55,9 @@ public class UserController {
      */
     @PostMapping("/login")
     public Result login(@RequestBody @Validated(ValidationGroups.Insert.class) LoginFormDTO loginForm, HttpSession session) {
-        return userService.login(loginForm, session);
+        Result result = userService.login(loginForm, session);
+        System.out.println(result);
+        return result;
     }
 
     /**
@@ -74,6 +78,7 @@ public class UserController {
      */
     @GetMapping("/me")
     public Result me() {
+        // 从ThreadLocal取
         UserDTO user = UserHolder.getUser();
         return Result.ok(user);
     }
@@ -124,7 +129,9 @@ public class UserController {
      */
     @PostMapping("/sign")
     public Result sign() {
-        return userService.sign();
+        Result result = userService.sign();
+        System.out.println(result);
+        return result;
     }
 
     /**
@@ -134,7 +141,9 @@ public class UserController {
      */
     @PostMapping("/sign/count")
     public Result signCount() {
-        return userService.signCount();
+        Result result = userService.signCount();
+        System.out.println(result);
+        return result;
     }
 
 }

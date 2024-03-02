@@ -25,13 +25,12 @@ public class IPUtil {
     public static String getIpAddr(HttpServletRequest request) {
         String ipAddr;
         try {
-            // Squid 服务代理
-            ipAddr = request.getHeader("x-forwarded-for");
-            // apache 服务代理
+            // 拿到经过的代理服务器的ip地址列表，逗号分割
+            ipAddr = request.getHeader("X-Forwarded-For");
+            // 不断尝试获取ip
             if (ipAddr == null || ipAddr.length() == 0 || "unknown".equalsIgnoreCase(ipAddr)) {
                 ipAddr = request.getHeader("Proxy-Client-IP");
             }
-            // weblogic 服务代理
             if (ipAddr == null || ipAddr.length() == 0 || "unknown".equalsIgnoreCase(ipAddr)) {
                 ipAddr = request.getHeader("WL-Proxy-Client-IP");
             }

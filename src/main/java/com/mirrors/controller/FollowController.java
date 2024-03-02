@@ -26,7 +26,9 @@ public class FollowController {
      */
     @PutMapping("/{id}/{isFollow}")
     public Result follow(@PathVariable("id") Long followUserId, @PathVariable("isFollow") Boolean isFollow) {
-        return followService.follow(followUserId, isFollow);
+        Result result = followService.follow(followUserId, isFollow);
+        System.out.println(result);
+        return result;
     }
 
     /**
@@ -37,7 +39,9 @@ public class FollowController {
      */
     @GetMapping("/or/not/{id}")
     public Result followOrNot(@PathVariable("id") Long followUserId) {
-        return followService.followOrNot(followUserId);
+        Result result = followService.followOrNot(followUserId);
+        System.out.println(result);
+        return result;
     }
 
     /**
@@ -48,6 +52,8 @@ public class FollowController {
      */
     @GetMapping("/common/{id}")
     public Result followCommon(@PathVariable("id") Long id) {
-        return followService.followCommon(id);
+        Result result = followService.followCommon(id);
+        System.out.println(result);
+        return result;
     }
 }

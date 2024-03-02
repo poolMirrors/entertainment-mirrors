@@ -553,22 +553,23 @@ Shop shop = 调用函数……
 
 #### 1.缓存穿透
 
-缓存穿透 ：缓存穿透是指客户端请求的数据在缓存中和数据库中都不存在，这样缓存永远不会生效，这些请求都会打到数据库。
+缓存穿透 ：缓存穿透是指客户端请求的数据在**缓存中和数据库中都不存在**，这样缓存永远不会生效，这些请求都会打到数据库。
 
 常见的解决方案有两种：
 
-- 缓存空对象
+- **非法请求的限制**
+- **缓存空对象**
   - 优点：实现简单，维护方便
   - 缺点：
     - 额外的内存消耗
     - 可能造成短期的不一致
-- 布隆过滤
+- **布隆过滤**
   - 优点：内存占用较少，没有多余key
   - 缺点：
     - 实现复杂
     - 存在误判可能
 
-（1）**缓存空对象思路分析：**当我们客户端访问不存在的数据时，先请求redis，但是此时redis中没有数据，此时会访问到数据库，但是数据库中也没有数据，这个数据穿透了缓存，直击数据库，我们都知道数据库能够承载的并发不如redis这么高，如果大量的请求同时过来访问这种不存在的数据，这些请求就都会访问到数据库，简单的解决方案就是哪怕这个数据在数据库中也不存在，我们也把这个数据存入到redis中去，这样，下次用户过来访问这个不存在的数据，那么在redis中也能找到这个数据就不会进入到缓存了
+（1）**缓存空对象思路分析：**当我们客户端访问不存在的数据时，先请求redis，但是此时redis中没有数据，此时会访问到数据库，但是数据库中也没有数据，这个数据穿透了缓存，直击数据库，我们都知道数据库能够承载的并发不如redis这么高，如果大量的请求同时过来访问这种不存在的数据，这些请求就都会访问到数据库，简单的解决方案就是**哪怕这个数据在数据库中也不存在，我们也把这个数据存入到redis中去**，这样，下次用户过来访问这个不存在的数据，那么在redis中也能找到这个数据就不会进入到缓存了
 
 （2）**布隆过滤：**布隆过滤器其实采用的是哈希思想来解决这个问题，通过一个庞大的二进制数组，走哈希思想去判断当前这个要查询的这个数据是否存在，如果布隆过滤器判断存在，则放行，这个请求会去访问redis，哪怕此时redis中的数据过期了，但是数据库中一定存在这个数据，在数据库中查询出来这个数据后，再将其放入到redis中。假设布隆过滤器判断这个数据不存在，则直接返回
 
@@ -629,39 +630,43 @@ private Shop queryWithPassThrough(Long id) {
 
 #### 2.缓存雪崩
 
-缓存雪崩是指在同一时段大量的缓存key同时失效或者Redis服务宕机，导致大量请求到达数据库，带来巨大压力。
+缓存雪崩是指在同一时段**大量的缓存key同时失效**或者**Redis服务宕机**，导致大量请求到达数据库，带来巨大压力。
 
 解决方案：
 
-- 给不同的Key的TTL添加随机值
-- 利用Redis集群提高服务的可用性
-- 给缓存业务添加**降级限流策略**
-- 给业务添加**多级缓存**
+- 大量key同时过期
+  - 给不同的Key的**TTL添加随机值**
+  - 访问的数据不在 Redis 里，就加个**互斥锁**，保证**同一时间内只有一个请求来构建缓存**（实现互斥锁的时候，最好设置**超时时间** 
+  - 后台更新缓存：在业务线程发现缓存数据失效后（缓存数据被淘汰），**通过消息队列发送一条消息通知后台线程更新缓存**，后台线程收到消息后，在更新缓存前可以判断缓存是否存在，存在就不执行更新缓存操作；不存在就读取数据库数据，并将数据加载到缓存 
+- Redis宕机
+  - 利用Redis**集群**提高服务的可用性
+  - 给缓存业务添加**降级限流策略**
+  - 给业务添加**多级缓存**
 
 ![1653327884526](images/1653327884526.png)
 
 #### 3.缓存击穿
 
-缓存击穿问题也叫热点Key问题，就是一个被高并发访问并且缓存重建业务较复杂的key突然失效了，无数的请求访问会在瞬间给数据库带来巨大的冲击。
+缓存击穿问题也叫热点Key问题，就是**一个 被高并发访问 并且 缓存重建业务较复杂 的热点key突然失效了**，无数的请求访问会在瞬间给数据库带来巨大的冲击。
 
 常见的解决方案有两种：
 
-- 互斥锁
-- 逻辑过期
+- **互斥锁**
+- **逻辑过期（不给热点数据设置过期时间）**
 
 逻辑分析：假设线程1在查询缓存之后，本来应该去查询数据库，然后把这个数据重新加载到缓存的，此时只要线程1走完这个逻辑，其他线程就都能从缓存中加载这些数据了，但是假设在线程1没有走完的时候，后续的线程2，线程3，线程4同时过来访问当前这个方法， 那么这些线程都不能从缓存中查询到数据，那么他们就会同一时刻来访问查询缓存，都没查到，接着同一时间去访问数据库，同时的去执行数据库代码，对数据库访问压力过大
 
 ![1653328022622](images/1653328022622.png)
 
-解决方案一、使用锁来解决：
+**解决方案一、使用锁来解决：**
 
-因为锁能实现互斥性。假设线程过来，只能一个人一个人的来访问数据库，从而避免对于数据库访问压力过大，但这也会影响查询的性能，因为此时会让查询的性能从并行变成了串行，我们可以采用tryLock方法 + double check来解决这样的问题。
+因为锁能实现互斥性。假设线程过来，只能一个人一个人的来访问数据库，从而避免对于数据库访问压力过大，但这也会影响查询的性能，因为此时会让查询的性能从并行变成了串行，我们可以**采用tryLock方法 + double check来解决这样的问题。**
 
 假设现在线程1过来访问，他查询缓存没有命中，但是此时他获得到了锁的资源，那么线程1就会一个人去执行逻辑，假设现在线程2过来，线程2在执行过程中，并没有获得到锁，那么线程2就可以进行到休眠，直到线程1把锁释放后，线程2获得到锁，然后再来执行逻辑，此时就能够从缓存中拿到数据了。
 
 ![1653328288627](images/1653328288627.png)
 
-解决方案二、逻辑过期方案
+**解决方案二、逻辑过期方案**
 
 方案分析：我们之所以会出现这个缓存击穿问题，主要原因是在于我们对key设置了过期时间，假设我们不设置过期时间，其实就不会有缓存击穿的问题，但是不设置过期时间，这样数据不就一直占用我们内存了吗，我们可以采用逻辑过期方案。
 
@@ -1190,7 +1195,7 @@ public class RedisIDCreator {
 
 #### 实现方案
 
-使用乐观锁，优惠券的 **库存stock字段** 当作 version 版本号；**条件改成stock大于0 即可**
+- 使用乐观锁，优惠券的 **库存stock字段** 当作 version 版本号；**条件改成stock大于0 即可**
 
 #### IVoucherOrderService实现类
 
@@ -1221,8 +1226,10 @@ public Result seckillVoucherSync(Long voucherId) {
     
     //5，扣减库存【乐观锁】
     boolean success = seckillVoucherService.update()
-            .setSql("stock= stock -1")
-            .eq("voucher_id", voucherId).update().gt("stock",0); //where id = ? and stock > 0
+            .setSql("stock = stock - 1")
+            .eq("voucher_id", voucherOrder.getVoucherId())
+            .gt("stock", 0) //【乐观锁】库存大于0【超卖问题是因为没有gt()】
+            .update();
     if (!success) {
         return Result.fail("库存不足！");
     }
@@ -1347,7 +1354,7 @@ return this.createVoucherOrderSync(voucherId, userId);
 
 #### 有关锁失效原因分析 
 
-部署了多个tomcat，每个tomcat都有一个属于自己的jvm，那么假设在服务器A的tomcat内部，有两个线程，这两个线程由于使用的是同一份代码，那么他们的锁对象是同一个，是可以实现互斥的，但是如果现在是服务器B的tomcat内部，又有两个线程，但是他们的锁对象写的虽然和服务器A一样，但是锁对象却不是同一个，所以线程3和线程4可以实现互斥，但是却无法和线程1和线程2实现互斥，这就是 集群环境下，syn锁失效的原因，在这种情况下，我们就需要使用分布式锁来解决这个问题。
+部署了多个tomcat，每个tomcat都有一个属于自己的jvm，那么假设在服务器A的tomcat内部，有两个线程，这两个线程由于使用的是同一份代码，那么他们的锁对象是同一个，是可以实现互斥的，但是如果现在是服务器B的tomcat内部，又有两个线程，但是他们的锁对象写的虽然和服务器A一样，但是锁对象却不是同一个，所以线程3和线程4可以实现互斥，但是却无法和线程1和线程2实现互斥，这就是 集群环境下，syn锁失效的原因，在这种情况下，我们就需要**使用分布式锁来解决这个问题。**
 
 ![1653374044740](images/1653374044740.png)
 
@@ -2603,6 +2610,95 @@ public void createVoucherOrderRabbitMQ(VoucherOrder voucherOrder) {
     //}
 }
 ```
+
+# 优化：异步编排
+
+参考：[CompletableFuture原理与实践-外卖商家端API的异步化 - 美团技术团队 (meituan.com)](https://tech.meituan.com/2022/05/12/principles-and-practices-of-completablefuture.html) 
+
+​	   [CompletableFuture 详解 | JavaGuide](https://javaguide.cn/java/concurrent/completablefuture-intro.html) 
+
+​	   [异步编程利器：CompletableFuture详解 ｜Java 开发实战 - 掘金 (juejin.cn)](https://juejin.cn/post/6970558076642394142) 
+
+```java
+/**
+ * 异步编排，查询博客，返回blog涉及的信息（用户信息、博客信息，店铺信息，优惠券信息）；优化串行；
+ * 根据blogId查询blog，得到userId和shopId -> 再查用户信息、商铺信息、优惠券信息 ->返回
+ *
+ * @param blogId
+ * @return
+ */
+@GetMapping("/async/{blogId}")
+public Result getDetailByCF(@PathVariable("blogId") Long blogId) {
+    // 线程池
+    ExecutorService threadPool = new ThreadPoolExecutor(10, 10, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(100));
+    // TODO 完善返回方式
+    Object[] ret = new Object[4];
+
+    // 1.查询blog
+    CompletableFuture<long[]> cf1 = CompletableFuture.supplyAsync(() -> {
+        Blog blog = blogService.getById(blogId);
+        ret[0] = blog;
+        return new long[]{blog.getUserId(), blog.getShopId()};
+    }, threadPool);
+
+    // 1.1.并行查用户详细信息
+    CompletableFuture<Void> cf2 = cf1.thenAcceptAsync((arr) -> {
+        long userId = arr[0];
+        UserInfo userInfo = userInfoService.getById(userId);
+        ret[1] = userInfo;
+    }, threadPool);
+
+    // 1.2.并行查优惠券
+    CompletableFuture<Void> cf3 = cf1.thenAcceptAsync((arr) -> {
+        long shopId = arr[1];
+        List<Voucher> vouchers = voucherService.query().eq("shop_id", shopId).list();
+        ret[2] = vouchers;
+    }, threadPool);
+
+    // 1.3.并行查店铺
+    CompletableFuture<Void> cf4 = cf1.thenAcceptAsync((arr) -> {
+        long shopId = arr[1];
+        Shop shop = shopService.getById(shopId);
+        ret[3] = shop;
+    }, threadPool);
+
+    // 2.等待执行完
+    CompletableFuture<Void> tmp = CompletableFuture.allOf(cf2, cf3, cf4);
+    tmp.join();
+
+    return Result.ok(ret);
+}
+```
+
+# 优化：Caffeine+Redis多级缓存
+
+# 优化：分库分表
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

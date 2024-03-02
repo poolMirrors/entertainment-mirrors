@@ -44,206 +44,6 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     private RedisUtil redisUtil;
 
     /**
-     * 【缓存击穿】获取锁
-     *
-     * @param key
-     * @return
-     */
-    @Deprecated
-    private boolean tryLock(String key) {
-        // setnx key value
-        Boolean flag = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", 10, TimeUnit.SECONDS);
-        // 不要直接return flag，会有自动拆箱，出现空指针异常
-        return BooleanUtil.isTrue(flag);
-    }
-
-    /**
-     * 【缓存击穿】释放锁
-     *
-     * @param key
-     */
-    @Deprecated
-    private void unlock(String key) {
-        stringRedisTemplate.delete(key);
-    }
-
-    /**
-     * 【缓存穿透】
-     *
-     * @param id
-     * @return
-     */
-    @Deprecated
-    private Shop queryWithPassThrough(Long id) {
-        // 从redis查缓存
-        String shopJson = stringRedisTemplate.opsForValue().get(RedisConstants.CACHE_SHOP_KEY + id);
-        if (StrUtil.isNotBlank(shopJson)) {
-            Shop shop = JSONUtil.toBean(shopJson, Shop.class);
-            return shop;
-        }
-        //【缓存穿透】判断命中是否为空值，""空字符串
-        if (shopJson != null) {
-            return null;
-        }
-
-        // 不存在，查询数据库
-        Shop shop = getById(id);
-        if (shop == null) {
-            //【缓存穿透】空值写入redis
-            stringRedisTemplate.opsForValue().set(RedisConstants.CACHE_SHOP_KEY + id, "", RedisConstants.CACHE_NULL_TTL_MINUTES, TimeUnit.MINUTES);
-            return null;
-        }
-
-        // 存在，写入redis，并设置过期时间
-        stringRedisTemplate.opsForValue().set(RedisConstants.CACHE_SHOP_KEY + id, JSONUtil.toJsonStr(shop), RedisConstants.CACHE_SHOP_TTL_MINUTES, TimeUnit.MINUTES);
-
-        return shop;
-    }
-
-    /**
-     * 【缓存穿透 + 击穿】锁机制
-     *
-     * @param id
-     * @return
-     */
-    @Deprecated
-    private Shop queryWithMutex(Long id) {
-        // 从redis查缓存
-        String shopJson = stringRedisTemplate.opsForValue().get(RedisConstants.CACHE_SHOP_KEY + id);
-        if (StrUtil.isNotBlank(shopJson)) {
-            return JSONUtil.toBean(shopJson, Shop.class);
-        }
-        //【缓存穿透】判断命中是否为空值，""空字符串
-        if (shopJson != null) {
-            return null;
-        }
-
-        //【缓存击穿】
-        // 获取互斥锁
-        Shop shop;
-        try {
-            boolean lock = tryLock(RedisConstants.LOCK_SHOP_KEY + id);
-            if (lock == false) {
-                Thread.sleep(50);
-                // 递归？重新查询
-                queryWithMutex(id);
-            }
-
-            // 成功获取锁，再次查询redis；存在就返回，不存在就查询数据库
-            shopJson = stringRedisTemplate.opsForValue().get(RedisConstants.CACHE_SHOP_KEY + id);
-            if (StrUtil.isNotBlank(shopJson)) {
-                return JSONUtil.toBean(shopJson, Shop.class);
-            }
-
-            // 不存在，查询数据库
-            shop = getById(id);
-            Thread.sleep(200); // 模拟重建延迟
-            if (shop == null) {
-                //【缓存穿透】空值写入redis
-                stringRedisTemplate.opsForValue().set(RedisConstants.CACHE_SHOP_KEY + id, "", RedisConstants.CACHE_NULL_TTL_MINUTES, TimeUnit.MINUTES);
-                return null;
-            }
-
-            // 存在，写入redis，并设置过期时间
-            stringRedisTemplate.opsForValue().set(RedisConstants.CACHE_SHOP_KEY + id, JSONUtil.toJsonStr(shop), RedisConstants.CACHE_SHOP_TTL_MINUTES, TimeUnit.MINUTES);
-
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        } finally {
-            // 释放互斥锁
-            unlock(RedisConstants.LOCK_SHOP_KEY + id);
-        }
-
-        return shop;
-    }
-
-    /**
-     * 封装逻辑过期时间，预热，单元测试、xxl-job
-     *
-     * @param id
-     * @param expireSeconds
-     */
-    @Deprecated
-    public void saveShop2RedisByLogicExpire(Long id, Long expireSeconds) throws InterruptedException {
-        // 查询店铺数据
-        Shop shop = getById(id);
-        Thread.sleep(50); // 模拟延迟
-
-        // 封装逻辑过期时间
-        RedisData redisData = new RedisData();
-        redisData.setData(shop);
-        redisData.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds));
-
-        // 写入redis，不设置redis的过期时间
-        stringRedisTemplate.opsForValue().set(RedisConstants.CACHE_SHOP_KEY + id, JSONUtil.toJsonStr(redisData));
-    }
-
-    /**
-     * 线程池
-     */
-    private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newFixedThreadPool(10);
-
-    /**
-     * 【缓存击穿】逻辑过期时间，前提要有redis预热所有店铺（不用考虑穿透）
-     *
-     * @param id
-     * @return
-     */
-    @Deprecated
-    private Shop queryWithLogicExpire(Long id) {
-        // 从redis查店铺缓存，是否存在
-        String shopJson = stringRedisTemplate.opsForValue().get(RedisConstants.CACHE_SHOP_KEY + id);
-        if (StrUtil.isBlank(shopJson)) {
-            return null;
-        }
-
-        // 存在，判断是否过期
-        RedisData redisData = JSONUtil.toBean(shopJson, RedisData.class);
-        JSONObject jsonObject = (JSONObject) redisData.getData();
-        Shop shop = JSONUtil.toBean(jsonObject, Shop.class);
-
-        LocalDateTime expireTime = redisData.getExpireTime();
-        if (expireTime.isAfter(LocalDateTime.now())) { // 如果过期时间在now之后，说明还没过期
-            return shop;
-        }
-
-        // 过期，需要缓存重建，获取锁
-        String lockKey = RedisConstants.LOCK_SHOP_KEY + id;
-        boolean lock = tryLock(lockKey);
-        if (lock == false) {
-            return shop;
-        }
-
-        // 获取锁成功，再次查询redis，进行Double Check
-        //【线程A和B同时判断是过期】 A重建缓存后释放锁，但是B由于网络原因，在A释放锁后才开始获取锁
-        shopJson = stringRedisTemplate.opsForValue().get(RedisConstants.CACHE_SHOP_KEY + id);
-        redisData = JSONUtil.toBean(shopJson, RedisData.class);
-        jsonObject = (JSONObject) redisData.getData();
-        shop = JSONUtil.toBean(jsonObject, Shop.class);
-
-        expireTime = redisData.getExpireTime();
-        if (expireTime.isAfter(LocalDateTime.now())) { // 如果过期时间在now之后，说明还没过期
-            return shop;
-        }
-
-        // Double Check后，开启线程缓存重建
-        CACHE_REBUILD_EXECUTOR.submit(() -> {
-            try {
-                // 缓存重建，逻辑10s过期，为了方便测试
-                this.saveShop2RedisByLogicExpire(id, 10L);
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            } finally {
-                // 释放锁
-                unlock(lockKey);
-            }
-        });
-
-        return shop;
-    }
-
-
-    /**
      * 根据id查询数据库 商铺信息
      *
      * @param id
@@ -251,20 +51,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
      */
     @Override
     public Result queryById(Long id) {
-        //【缓存穿透】
-        //Shop shop = redisUtil.queryWithPassThrough(
-        //        RedisConstants.CACHE_SHOP_KEY,
-        //        id,
-        //        Shop.class,
-        //        id2 -> getById(id2),
-        //        RedisConstants.CACHE_SHOP_TTL_MINUTES,
-        //        TimeUnit.MINUTES
-        //);
-
-        //【缓存穿透 + 击穿】
-        // Shop shop = queryWithMutex(id);
-
-        //【缓存击穿】逻辑过期时间，要预热
+        // 逻辑过期时间，要预热
         Shop shop = redisUtil.queryWithLogicExpire(
                 RedisConstants.CACHE_SHOP_KEY,
                 id,
@@ -295,16 +82,15 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
             return Result.fail("店铺id不能为空");
         }
 
-        // 先更新数据库
+        // 先更新数据库，再删除缓存，适用于对数据一致性要求较高，且写操作相对较少的场景
         updateById(shop);
-        // 再删除缓存
         stringRedisTemplate.delete(RedisConstants.CACHE_SHOP_KEY + id);
 
         return Result.ok();
     }
 
     /**
-     * 根据类型查店铺
+     * 根据 商铺类型 和 距离远近 分页查询商铺信息
      *
      * @param typeId
      * @param current
@@ -313,13 +99,15 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
      * @return
      */
     @Override
-    public Result queryShopByType(Integer typeId, Integer current, Double x, Double y) {
+    public Result queryShopByTypeAndPos(Integer typeId, Integer current, Double x, Double y) {
         // 判断是否根据坐标查询
         if (x == null || y == null) {
             Page<Shop> page = query().eq("type_id", typeId).page(new Page<>(current, SystemConstants.DEFAULT_PAGE_SIZE));
             return Result.ok(page.getRecords());
         }
 
+        // 坐标都不为空，要判断远近
+        
         // 计算分页参数，给redis用
         int from = (current - 1) * SystemConstants.DEFAULT_PAGE_SIZE;
         int end = current * SystemConstants.DEFAULT_PAGE_SIZE;

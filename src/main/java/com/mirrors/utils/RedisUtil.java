@@ -35,7 +35,7 @@ public class RedisUtil {
      * @return
      */
     private boolean tryLock(String key) {
-        // setnx key value
+        // setnx key value；可使用分布式锁Redission
         Boolean flag = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", 10, TimeUnit.SECONDS);
         // 不要直接return flag，会有自动拆箱，出现空指针异常
         return BooleanUtil.isTrue(flag);
@@ -47,20 +47,8 @@ public class RedisUtil {
      * @param key
      */
     private void unlock(String key) {
-        stringRedisTemplate.delete(key);
-    }
-
-
-    /**
-     * redis过期时间
-     *
-     * @param key
-     * @param data
-     * @param time
-     * @param timeUnit
-     */
-    public void setWithExpire(String key, Object data, Long time, TimeUnit timeUnit) {
-        stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(data), time, timeUnit);
+        Boolean delete = stringRedisTemplate.delete(key);
+        System.out.println(delete);
     }
 
     /**
@@ -81,54 +69,12 @@ public class RedisUtil {
     }
 
     /**
-     * 【缓存穿透】；
-     * 通过 id 查询实体，使用 【返回空对象】 解决 【缓存穿透】 问题
-     *
-     * @param keyPrefix
-     * @param id
-     * @param tClass
-     * @param queryDB
-     * @param time
-     * @param timeUnit
-     * @param <T>       定义泛型，数据类型
-     * @param <Tid>     定义泛型，id类型
-     * @return
-     */
-    public <T, Tid> T queryWithPassThrough(String keyPrefix, Tid id, Class<T> tClass, Function<Tid, T> queryDB, Long time, TimeUnit timeUnit) {
-        // 从redis查缓存
-        String key = keyPrefix + id;
-        String json = stringRedisTemplate.opsForValue().get(key);
-        if (StrUtil.isNotBlank(json)) {
-            return JSONUtil.toBean(json, tClass);
-        }
-
-        //【缓存穿透】判断命中是否为空值，""空字符串
-        if (json != null) {
-            return null;
-        }
-
-        // 不存在，查询数据库
-        T t = queryDB.apply(id);
-        if (t == null) {
-            //【缓存穿透】空值写入redis
-            stringRedisTemplate.opsForValue().set(key, "", RedisConstants.CACHE_NULL_TTL_MINUTES, TimeUnit.MINUTES);
-            return null;
-        }
-
-        // 存在，写入redis，并设置过期时间
-        this.setWithExpire(key, t, time, timeUnit);
-
-        // 返回
-        return t;
-    }
-
-    /**
      * 通过id查询实体 Bean 信息，使用【逻辑过期】策略 解决【缓存击穿】；
-     * 使用逻辑过期策略一般需要提前将热点 Key 导入数据库中
+     * 使用逻辑过期策略需要提前将热点 Key 导入数据库中
      *
      * @param keyPrefix
      * @param id
-     * @param tClass
+     * @param clazz
      * @param queryDB
      * @param time
      * @param timeUnit
@@ -136,18 +82,29 @@ public class RedisUtil {
      * @param <Tid>
      * @return
      */
-    public <T, Tid> T queryWithLogicExpire(String keyPrefix, Tid id, Class<T> tClass, Function<Tid, T> queryDB, Long time, TimeUnit timeUnit) {
-        // 从redis查店铺缓存，是否存在
+    public <T, Tid> T queryWithLogicExpire(String keyPrefix, Tid id, Class<T> clazz, Function<Tid, T> queryDB, Long time, TimeUnit timeUnit) {
+        // 从redis查店铺缓存，是否存在（已经缓存预热，而且是逻辑过期，一般来说数据是存在的）
         String key = keyPrefix + id;
         String json = stringRedisTemplate.opsForValue().get(key);
+        // 不存在（null或者空值）
         if (StrUtil.isBlank(json)) {
-            return null;
+            if (json != null) { // 命中空值
+                return null;
+            } else { // 没有命中空值，查询数据库
+                T t2 = queryDB.apply(id);
+                if (t2 == null) {
+                    stringRedisTemplate.opsForValue().set(key, "", 10L, TimeUnit.MINUTES); // 【缓存穿透】设置空值
+                    return null;
+                } else {
+                    this.setWithLogicExpire(key, t2, time, timeUnit);
+                }
+            }
         }
 
         // 存在，判断是否过期
         RedisData redisData = JSONUtil.toBean(json, RedisData.class);
         JSONObject jsonObject = (JSONObject) redisData.getData();
-        T t = JSONUtil.toBean(jsonObject, tClass);
+        T t = JSONUtil.toBean(jsonObject, clazz);
 
         LocalDateTime expireTime = redisData.getExpireTime();
         if (expireTime.isAfter(LocalDateTime.now())) { // 如果过期时间在now之后，说明还没过期
@@ -157,7 +114,7 @@ public class RedisUtil {
         // 过期，需要缓存重建，获取锁
         String lockKey = RedisConstants.LOCK_SHOP_KEY + id;
         boolean lock = tryLock(lockKey);
-        if (lock == false) {
+        if (!lock) {
             return t;
         }
 
@@ -166,7 +123,7 @@ public class RedisUtil {
         json = stringRedisTemplate.opsForValue().get(key);
         redisData = JSONUtil.toBean(json, RedisData.class);
         jsonObject = (JSONObject) redisData.getData();
-        t = JSONUtil.toBean(jsonObject, tClass);
+        t = JSONUtil.toBean(jsonObject, clazz);
 
         expireTime = redisData.getExpireTime();
         if (expireTime.isAfter(LocalDateTime.now())) { // 如果过期时间在now之后，说明还没过期

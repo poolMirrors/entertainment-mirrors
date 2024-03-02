@@ -105,7 +105,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Override
     public Result seckillVoucherRabbitMQ(Long voucherId) {
         Long userId = UserHolder.getUser().getId();
-        long orderId = redisIDCreator.nextId("order");
+        long orderId = redisIDCreator.nextId("order"); // 随机生成订单id
 
         // 执行lua脚本
         int result = stringRedisTemplate.execute(
@@ -142,80 +142,85 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Transactional
     @Override
     public void createVoucherOrderRabbitMQ(VoucherOrder voucherOrder) {
-
-        //（1）---------不加锁-------------
+        //（1）-----------加锁-------------
 
         Long userId = voucherOrder.getUserId();
         Long voucherId = voucherOrder.getVoucherId();
-        // 查询数据库，是否一人一单（redis判断过了，MySQL还要判断？）
-        int count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
-        if (count > 0) {
-            log.error("不能重复购买");
+        // 创建分布式锁
+        RLock lock = redissonClient.getLock("order:" + userId);
+        boolean isLock = lock.tryLock();
+        if (!isLock) {
+            // 获取锁失败，直接返回失败
+            log.error("不允许重复下单！");
             return;
         }
+        // 获取锁成功
+        try {
+            // 查询订单
+            int count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
+            if (count > 0) {
+                log.error("该用户已经购买过一次！");
+                return;
+            }
+            // 扣减 库存
+            boolean success = seckillVoucherService.update()
+                    .setSql("stock = stock - 1")
+                    .eq("voucher_id", voucherId)
+                    .gt("stock", 0) //【乐观锁】只要库存大于0就可以秒杀成功（超卖问题），优化需要比较version
+                    .update();
 
-        // 扣减库存（redis判断过了，MySQL还要判断？）
-        boolean success = seckillVoucherService.update()
-                .setSql("stock = stock - 1")
-                .eq("voucher_id", voucherOrder.getVoucherId())
-                .gt("stock", 0) //【乐观锁】库存大于0
-                .update();
-        if (!success) {
-            log.error("不能重复购买");
-            return;
+            if (!success) {
+                log.error("库存不足！");
+                return;
+            }
+
+            // 保存订单
+            save(voucherOrder);
+            // 同时发送延时消息给MQ，死信交换机
+            mqSender.sendDelayOrderMessage(
+                    MultiDelayMessage.builder()
+                            .data(voucherOrder.getId())
+                            .delayMillis(CollUtil.newArrayList(10000L, 10000L, 10000L))
+                            .build()
+            );
+
+        } finally {
+            // 释放锁
+            lock.unlock();
         }
 
-        // 创建订单，写入数据库
-        save(voucherOrder);
-        // 同时发送延时消息给MQ，死信交换机
-        mqSender.sendDelayOrderMessage(
-                MultiDelayMessage.builder()
-                        .data(voucherOrder.getId())
-                        .delayMillis(CollUtil.newArrayList(10000L, 10000L, 10000L))
-                        .build()
-        );
 
-
-        //（2）-----------加锁-------------
+        //（2）---------不加锁-------------
 
         //Long userId = voucherOrder.getUserId();
         //Long voucherId = voucherOrder.getVoucherId();
-        //// 创建锁
-        //RLock lock = redissonClient.getLock("order:" + userId);
-        //boolean isLock = lock.tryLock();
-        //if (!isLock) {
-        //    // 获取锁失败，直接返回失败
-        //    log.error("不允许重复下单！");
+        //// 查询数据库，是否一人一单（redis判断过了，MySQL还要判断？）
+        //int count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
+        //if (count > 0) {
+        //    log.error("不能重复购买");
         //    return;
         //}
-        //// 获取锁成功
-        //try {
-        //    // 查询订单
-        //    int count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
-        //    if (count > 0) {
-        //        log.error("该用户已经购买过一次！");
-        //        return;
-        //    }
-        //    // 扣减 库存
-        //    boolean success = seckillVoucherService.update()
-        //            .setSql("stock = stock - 1")
-        //            .eq("voucher_id", voucherId)
-        //            .gt("stock", 0) // CAS优化，只要库存大于0就可以秒杀成功
-        //            .update();
         //
-        //    if (!success) {
-        //        log.error("库存不足！");
-        //        return;
-        //    }
-        //
-        //    // 保存订单
-        //    save(voucherOrder);
-        //    // 同时发送延时消息给MQ，死信交换机
-        //
-        //} finally {
-        //    // 释放锁
-        //    lock.unlock();
+        //// 扣减库存
+        //boolean success = seckillVoucherService.update()
+        //        .setSql("stock = stock - 1")
+        //        .eq("voucher_id", voucherOrder.getVoucherId())
+        //        .gt("stock", 0) //【乐观锁】库存大于0（超卖问题）
+        //        .update();
+        //if (!success) {
+        //    log.error("不能重复购买");
+        //    return;
         //}
+        //
+        //// 创建订单，写入数据库
+        //save(voucherOrder);
+        //// 同时发送延时消息给MQ，死信交换机
+        //mqSender.sendDelayOrderMessage(
+        //        MultiDelayMessage.builder()
+        //                .data(voucherOrder.getId())
+        //                .delayMillis(CollUtil.newArrayList(10000L, 10000L, 10000L))
+        //                .build()
+        //);
     }
 
 

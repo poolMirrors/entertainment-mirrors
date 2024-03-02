@@ -35,7 +35,7 @@ public class GetAllTokenTest {
         List<User> users = userMapper.selectList(new LambdaQueryWrapper<>());
 
         // 修改 文件位置
-        BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter("C:\\JavaProjects\\2-点评项目\\project\\data\\tokens.txt"));
+        BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter("C:\\JavaProjects\\2-点评项目\\project\\entertainment-mirrors\\data\\tokens.txt"));
 
         users.stream().forEach(user -> {
             String token = UUID.randomUUID().toString(true);
