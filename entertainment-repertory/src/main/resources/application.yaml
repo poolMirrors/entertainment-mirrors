@@ -1,0 +1,28 @@
+server:
+  port: 8091
+spring:
+  application:
+    name: entertainment-repertory
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/redis?useSSL=false&serverTimezone=UTC
+    username: root
+    password: root
+  jackson:
+    default-property-inclusion: non_null
+mybatis-plus:
+  type-aliases-package: com.mirrors.pojo
+logging:
+  level:
+    com.mirrors: debug
+# 配置dubbo
+dubbo:
+  application:
+    name: entertainment-repertory
+  protocol:
+    name: dubbo
+    port: -1
+  registry:
+    address: nacos://192.168.101.130:8848
+  provider:
+    timeout: 30000

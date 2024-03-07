@@ -80,8 +80,8 @@
     - 切换用户mirrors启动：su mirrors             ./bin/elasticsearch -d
     - 杀掉进程：ps aux | grep elastic            kill -9 [pid]
     - 修改jdk选择：https://www.cnblogs.com/zhuhuibiao/p/16446105.html
-
-
+  - **启动Nacos**
+    - sh bin/startup.sh -m standalone
 
 
 

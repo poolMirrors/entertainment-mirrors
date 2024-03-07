@@ -2562,15 +2562,15 @@ public class SearchServiceImpl implements ISearchService {
 
 **什么是分布式事务？**
 
-微服务架构：
+**微服务架构**：
 
 ![](images/Snipaste_2024-01-18_17-37-39.png)
 
-单服务多数据库：
+**单服务多数据库**：
 
 ![](images/Snipaste_2024-01-18_17-37-45.png)
 
-多服务单数据库：
+**多服务单数据库**：
 
 ![](images/Snipaste_2024-01-18_17-37-50.png)
 
@@ -2619,7 +2619,10 @@ BASE 是 Basically Available(**基本可用**)、Soft state(**软状态**)和 Ev
 1. 使用**消息队列通知的方式去实现，通知失败自动重试，达到最大失败次数需要人工处理**
 2. 使用**任务调度的方案，启动任务调度将 信息 由 数据库 同步到elasticsearch、MinIO、redis中【本项目采用】**
 
-## 4.项目实现
+## 4.项目实现（Es和MySQL一致性）
+
+- 具体看这个，项目实现的不是分布式事务，是一致性！
+- [分布式事务（四）本地消息表和消息事务（RocketMQ详细实现） - 掘金 (juejin.cn)](https://juejin.cn/post/7030787692984008741#heading-1) 
 
 ### 流程
 
