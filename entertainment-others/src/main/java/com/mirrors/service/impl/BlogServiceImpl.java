@@ -223,8 +223,8 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     /**
      * Feed流推模式下，信息的滚动分页
      *
-     * @param max
-     * @param offset 注意第一次查询offset为0，设置默认值，避免空指针
+     * @param max 上次查询的最后一个时间戳
+     * @param offset 注意第一次查询offset为0，设置默认值，避免空指针（ZSet中，score等于参数max的个数）
      * @return
      */
     @Override
@@ -232,10 +232,15 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         // 获取当前用户
         Long userId = UserHolder.getUser().getId();
 
-        // 查询收件箱【滚动分页查询】
+        // 查询收件箱【滚动分页查询（从大到小，score为时间戳）】
         String key = "feed:" + userId;
         Set<ZSetOperations.TypedTuple<String>> tuples = stringRedisTemplate
                 .opsForZSet()
+                // K key：集合key
+                // double min：最小值（当前最小值不关心，直接设置0）
+                // double max：最大值（上次的最小值，当前的最大值）
+                // offset：偏移量（ZSet中，score等于max的个数）
+                // count：数量（每次查个数）
                 .reverseRangeByScoreWithScores(key, 0, max, offset, 2); // 4个关键参数
 
         if (tuples == null || tuples.isEmpty()) {
@@ -277,9 +282,9 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
 
         // 返回
         ScrollResult scrollResult = new ScrollResult();
-        scrollResult.setList(blogList);
-        scrollResult.setOffset(minCount);
-        scrollResult.setMinTime(minTime);
+        scrollResult.setList(blogList); // 博客
+        scrollResult.setOffset(minCount); // 偏移量
+        scrollResult.setMinTime(minTime); // 最小时间戳
 
         return Result.ok(scrollResult);
     }

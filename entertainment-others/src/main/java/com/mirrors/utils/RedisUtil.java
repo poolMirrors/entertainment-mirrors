@@ -41,11 +41,12 @@ public class RedisUtil {
     }
 
     /**
-     * 【缓存击穿】释放锁
+     * 释放锁
      *
      * @param key
      */
     private void unlock(String key) {
+        // 注意：使用Lua脚本进行线程id判断，避免误差锁
         Boolean delete = stringRedisTemplate.delete(key);
         System.out.println(delete);
     }
@@ -110,7 +111,7 @@ public class RedisUtil {
             return t;
         }
 
-        // 过期，需要缓存重建，获取锁
+        // 过期，需要【缓存重建】，获取锁
         String lockKey = RedisConstants.LOCK_SHOP_KEY + id;
         boolean lock = tryLock(lockKey);
         if (!lock) {

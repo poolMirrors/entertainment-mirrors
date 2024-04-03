@@ -17,6 +17,8 @@ public class FollowController {
     @Resource
     private IFollowService followService;
 
+    // ------------------------------------------舍弃功能---------------------------------------------
+
     /**
      * 关注和取关
      *

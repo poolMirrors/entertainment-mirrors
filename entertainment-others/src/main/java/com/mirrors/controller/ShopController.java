@@ -6,20 +6,34 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mirrors.dto.Result;
 import com.mirrors.entity.Shop;
 import com.mirrors.service.IShopService;
+import com.mirrors.utils.RedisConstants;
+import com.mirrors.utils.RedisUtil;
 import com.mirrors.utils.SystemConstants;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 店铺管理
  */
+@Slf4j
 @RestController
 @RequestMapping("/shop")
 public class ShopController {
 
     @Resource
-    public IShopService shopService;
+    private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private RedisUtil redisUtil;
+
+    @Resource
+    private IShopService shopService;
+
+    // --------------------------------------主要实现--------------------------------------------------
 
     /**
      * 根据id查询商铺信息【经过缓存redis】
@@ -30,7 +44,7 @@ public class ShopController {
     @GetMapping("/{id}")
     public Result queryShopById(@PathVariable("id") Long id) {
         Result result = shopService.queryById(id);
-        System.out.println(result);
+        log.info(result.toString());
         return result;
     }
 
@@ -42,11 +56,10 @@ public class ShopController {
      */
     @PostMapping
     public Result saveShop(@RequestBody Shop shop) {
-        // 写入数据库
+        // 新增数据库
         shopService.save(shop);
-        // TODO 再写入Redis
-
-        // 返回店铺id
+        // 由于是新增，保证写入Redis一定成功即可
+        redisUtil.setWithLogicExpire(RedisConstants.CACHE_SHOP_KEY + shop.getId(), shop, 6L, TimeUnit.HOURS);
         return Result.ok(shop.getId());
     }
 
@@ -58,10 +71,15 @@ public class ShopController {
      */
     @PutMapping
     public Result updateShop(@RequestBody Shop shop) {
+        // 更新数据库
         Result result = shopService.updateData(shop);
-        System.out.println(result);
+        // 删除Redis
+        stringRedisTemplate.opsForValue().getAndDelete(RedisConstants.CACHE_SHOP_KEY + shop.getId());
+        log.info(result.toString());
         return result;
     }
+
+    // --------------------------------------舍弃功能--------------------------------------------------
 
     /**
      * 根据 商铺类型 和 距离远近 分页查询商铺信息

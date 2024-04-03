@@ -16,6 +16,8 @@ public class TokenController {
     @Autowired
     private ITokenService iTokenService;
 
+    // ----------------------------------------舍弃功能---------------------------------------------------
+
     /**
      * 获取当前token
      *

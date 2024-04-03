@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import com.mirrors.dto.Result;
 import com.mirrors.entity.Blog;
 import com.mirrors.service.ISearchService;
+import lombok.extern.slf4j.Slf4j;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
@@ -23,13 +24,15 @@ import java.util.List;
  * @date 2024/1/20 15:18
  */
 @Service
+@Slf4j
 public class SearchServiceImpl implements ISearchService {
 
     @Resource
     private RestHighLevelClient restHighLevelClient;
 
     /**
-     * 从Elasticsearch中查询blog
+     * 从Elasticsearch中查询blog；
+     * {@link com.mirrors.controller.BlogController#getDetailByCF(Long)}
      *
      * @param text
      * @param page
@@ -42,24 +45,23 @@ public class SearchServiceImpl implements ISearchService {
         try {
             // 准备查询参数
             SearchRequest request = new SearchRequest("blog");
-            request.source().query(QueryBuilders.multiMatchQuery(text, "title", "content"));
+            request.source().query(QueryBuilders.multiMatchQuery(text, "title", "content")); // 从content字段中查询关键字
+            request.source().from((page - 1) * size).size(size); // 分页
             // 发送请求
             SearchResponse response = restHighLevelClient.search(request, RequestOptions.DEFAULT);
             // 结果解析
             SearchHits searchHits = response.getHits();
             long total = searchHits.getTotalHits().value;
-            System.out.println("共有" + total + "条数据");
+            log.info("共有" + total + "条数据");
             // 文档数组
             SearchHit[] hits = searchHits.getHits();
             List<Blog> list = new ArrayList<>();
             for (SearchHit hit : hits) {
                 String json = hit.getSourceAsString();
                 Blog blog = JSON.parseObject(json, Blog.class);
-
-                System.out.println("Blog = " + json);
                 list.add(blog);
             }
-            // TODO 从es中查询到blog返回结果
+            // TODO 查到blog，异步编排，查询用户详情+店铺信息
             return Result.ok(list);
 
         } catch (Exception e) {

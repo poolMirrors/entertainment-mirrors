@@ -77,7 +77,11 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
         // 先更新数据库，再删除缓存，适用于对数据一致性要求较高，且写操作相对较少的场景
         updateById(shop);
+        // TODO 保证两个操作成功执行：(1)重试机制，将要删除的数据传入MQ，从MQ中获取数据进行删除（2）订阅 binlog 日志，拿到具体要操作的数据，然后再执行缓存删除
         stringRedisTemplate.delete(RedisConstants.CACHE_SHOP_KEY + id);
+
+        // Canal 模拟 MySQL 主从复制的交互协议，把自己伪装成一个 MySQL 的从节点，向 MySQL 主节点发送 dump 请求，
+        // MySQL 收到请求后，就会开始推送 Binlog 给 Canal，Canal 解析 Binlog 字节流之后，转换为便于读取的结构化数据，供下游程序订阅使用
 
         return Result.ok();
     }

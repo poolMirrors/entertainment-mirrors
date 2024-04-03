@@ -263,7 +263,7 @@ public class MvcConfig implements WebMvcConfigurer {
 
 2、key要**方便携带**
 
-如果我们采用phone：手机号这个的数据来存储当然是可以的，但是如果把这样的敏感数据存储到redis中并且从页面中带过来毕竟不太合适，所以我们在后台生成一个随机串token，然后让前端带来这个token就能完成我们的整体逻辑了
+如果我们采用phone：**手机号这个的数据来存储当然是可以的，但是如果把这样的敏感数据存储到redis中**并且从页面中带过来毕竟不太合适，所以我们在后台生成一个随机串token，然后让前端带来这个token就能完成我们的整体逻辑了
 
 ### 2.流程图
 
@@ -365,6 +365,8 @@ public class MvcConfig implements WebMvcConfigurer {
 ```
 
 ### 5.token拦截器
+
+**:warning:【并非JWT的token】而是Redis实现session共享**
 
 在第一个拦截器中拦截所有的路径，把第二个拦截器做的事情放入到第一个拦截器中，同时刷新令牌，因为第一个拦截器有了threadLocal的数据，所以此时第二个拦截器只需要判断拦截器中的user对象是否存在即可，完成整体刷新功能。
 
@@ -2611,7 +2613,30 @@ public void createVoucherOrderRabbitMQ(VoucherOrder voucherOrder) {
 }
 ```
 
-# 优化：异步编排
+# 优化：CF异步编排
+
+## 与Futrue的区别
+
+- Futrue
+  - **不支持异步任务的编排组合**、**获取计算结果的 `get()` 方法为阻塞调用**。
+  - **如果主线程等待某个个异步执行的线程返回的结果来做下一步操作，则必须阻塞在future.get()的地方等待结果返回**  
+- CompletableFutrue
+  - 支持异步编排组合，将前面异步处理的结果交给另外一个异步事件处理线程来处理 
+
+## 优点和缺点
+
+- 优点
+  - **任务组合和并行处理：** `CompletableFuture` 提供了丰富的组合方法，如 `thenCombine()`, `thenCompose()`, `allOf()`, `anyOf()` 等，可以方便地组合多个异步操作的结果或等待多个异步操作完成。这使得任务的串行、并行和并行组合等操作变得更加容易。
+  - **异常处理：** `CompletableFuture` 提供了完善的异常处理机制，可以方便地处理异步操作过程中的异常情况。你可以使用 `exceptionally()`, `handle()`, `whenComplete()` 等方法来捕获和处理异常，使得代码更加健壮和可靠。
+  - **可编程性和灵活性：** `CompletableFuture` 具有更高的可编程性，你可以通过方法链式调用来构建复杂的异步操作流水线。它的方法返回的都是新的 `CompletableFuture` 对象，可以方便地对异步操作进行组合、转换和链式调用。
+  - **支持超时和取消：** `CompletableFuture` 支持设置超时时间和手动取消操作，可以在一定时间内等待异步操作的完成，并且可以通过调用 `cancel()` 方法来取消操作。
+- 缺点
+  - **内存开销：** `CompletableFuture` 使用**链式调用的方式，每个方法调用都会创建一个新的 `CompletableFuture` 对象，可能会带来一些额外的内存开销**。在处理大量异步操作时，可能需要注意内存使用情况。
+  - **公共线程池CommonPool**：**异步回调方法如果不传入线程池**，会使用ForkJoinPool中的公共线程池CommonPool，这里所有调用将共用该线程池，核心线程数=处理器数量-1（单核核心线程数为1），所有异步回调都会共用该CommonPool，**核心与非核心业务都竞争同一个池中的线程，很容易成为系统瓶颈** 
+
+
+
+##项目实现
 
 参考：[CompletableFuture原理与实践-外卖商家端API的异步化 - 美团技术团队 (meituan.com)](https://tech.meituan.com/2022/05/12/principles-and-practices-of-completablefuture.html) 
 

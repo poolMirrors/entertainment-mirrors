@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 @EqualsAndHashCode(callSuper = false)
 @Accessors(chain = true)
 @TableName("tb_voucher")
+@Deprecated
 public class Voucher {
     private static final long serialVersionUID = 1L;
 

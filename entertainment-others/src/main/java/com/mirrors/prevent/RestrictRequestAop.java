@@ -100,28 +100,28 @@ public class RestrictRequestAop {
             String ipKey = RedisConstants.ACCESS_LIMIT_IP_KEY + IPUtil.getIpAddr(request) + "-" + request.getRequestURI();
             String userKey = RedisConstants.ACCESS_LIMIT_USER_KEY + UserHolder.getUser().getId() + "-" + request.getRequestURI();
 
-            // 获取 ip锁
+            // 1.获取 ip锁
             ipLock = redissonClient.getLock("lock:" + ipKey);
             isIp = ipLock.tryLock();
             if (!isIp) {
                 throw new BusinessException("相同IP不能在同一时刻下单！");
             }
 
-            // 获取 user锁
+            // 2.获取 user锁
             userLock = redissonClient.getLock("lock" + userKey);
             isUser = userLock.tryLock();
             if (!isUser) {
                 throw new BusinessException("相同用户不能在同一时刻下单！");
             }
 
-            // 取得在限定时间内的访问次数
+            // 3.取得在限定时间内的访问次数
             String ipValue = stringRedisTemplate.opsForValue().get(ipKey);
             int ipCount = (ipValue == null ? 0 : Integer.parseInt(ipValue));
 
             String userValue = stringRedisTemplate.opsForValue().get(userKey);
             int userCount = (userValue == null ? 0 : Integer.parseInt(userValue));
 
-            // 如果 还没有达到最大访问次数，则将redis中的次数加1
+            // 4.如果 还没有达到最大访问次数，则将redis中的次数加1
             if (ipCount < count && userCount < count) {
                 // ip
                 if (ipCount == 0) {
@@ -160,6 +160,7 @@ public class RestrictRequestAop {
      * @return
      */
     @Around("repeatSubmitPointcut()")
+    @Deprecated
     public Object around(ProceedingJoinPoint proceedingJoinPoint) throws Throwable {
         // 获取当前 http request 对象
         ServletRequestAttributes requestAttributes = (ServletRequestAttributes) Objects.requireNonNull(RequestContextHolder.getRequestAttributes());

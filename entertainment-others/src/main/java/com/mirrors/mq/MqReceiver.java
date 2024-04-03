@@ -53,28 +53,25 @@ public class MqReceiver {
     public void receiveDelayOrder(@Payload MultiDelayMessage<Long> delayMessage, Channel channel, Message message) {
         log.info("接收到的延迟消息：" + delayMessage);
         try {
-            // 查询订单状态
+            // 1.查询订单状态
             Long orderId = delayMessage.getData();
             VoucherOrder voucherOrder = voucherOrderService.getById(orderId);
             if (voucherOrder == null || voucherOrder.getStatus() != 1) {
-                // TODO 实现支付服务，查询是否真的已支付
+                // TODO 2.实现支付服务，查询是否真的已支付
                 return;
             }
-            // 判断是否还有有延迟时间
+            // 3.判断是否还有有延迟时间
             if (delayMessage.hasNextDelay()) {
                 mqSender.sendDelayOrderMessage(delayMessage); // 有，重发延迟
                 return;
             }
-            // 没有，取消订单（可以删除）；保证事务一致性
+            // 4.没有，取消订单（可以删除）；保证事务一致性
             voucherOrderService.lambdaUpdate()
                     .set(VoucherOrder::getStatus, 4)
                     .eq(VoucherOrder::getId, orderId)
                     .update();
 
-            // TODO 恢复 MySQL库存 和 redis库存；保证事务一致性
-
-            // 手动确认消费完成
-            //channel.basicAck(message.getMessageProperties().getDeliveryTag(), true);
+            // TODO 5.恢复 MySQL库存 和 redis库存；保证事务一致性
 
         } catch (Exception e) {
             throw new RuntimeException(e);

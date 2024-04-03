@@ -28,7 +28,7 @@ public class LoginInterceptor implements HandlerInterceptor {
         // 判断是否拦截，ThreadLocal有用户不用拦截
         UserDTO user = UserHolder.getUser();
         if (user == null) {
-            // 拦截，返回状态码
+            // 拦截，返回状态码401
             response.setStatus(401);
             return false;
         }

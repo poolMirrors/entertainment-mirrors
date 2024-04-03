@@ -115,7 +115,7 @@ public class MinioUtil {
     }
 
     /**
-     * 根据文件md5值得到分块文件的目录
+     * 根据文件md5值得到分块文件的目录；分块使用
      *
      * @param fileMd5 文件md5值
      * @return 分块路径
@@ -125,7 +125,7 @@ public class MinioUtil {
     }
 
     /**
-     * 根据文件md5值获取文件绝对路径
+     * 根据文件md5值获取文件绝对路径；合并时用
      *
      * @param fileMd5 文件md5值
      * @param fileExt 文件扩展名

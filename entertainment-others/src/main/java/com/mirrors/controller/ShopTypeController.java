@@ -18,6 +18,8 @@ public class ShopTypeController {
     @Resource
     private IShopTypeService typeService;
 
+    // ----------------------------------------舍弃功能---------------------------------------------------
+
     /**
      * 查询店铺类型
      *

@@ -1,7 +1,11 @@
 package com.mirrors.controller;
 
 
+import cn.hutool.captcha.CaptchaUtil;
+import cn.hutool.captcha.CircleCaptcha;
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.lang.UUID;
+import com.mirrors.dto.CaptchaDTO;
 import com.mirrors.dto.LoginFormDTO;
 import com.mirrors.dto.Result;
 import com.mirrors.dto.UserDTO;
@@ -12,11 +16,14 @@ import com.mirrors.service.IUserService;
 import com.mirrors.utils.UserHolder;
 import com.mirrors.validate.ValidationGroups;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpSession;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 用户相关
@@ -32,8 +39,13 @@ public class UserController {
     @Resource
     private IUserInfoService userInfoService;
 
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
+    // -------------------------------------主要实现----------------------------------------------------
+
     /**
-     * 发送手机验证码
+     * 生成手机号码验证码，并没有实现发送，只是显示
      *
      * @param phone
      * @param session
@@ -67,7 +79,9 @@ public class UserController {
      */
     @PostMapping("/logout")
     public Result logout() {
+        // 删除ThreadLocal的值，以及Redis种的session（拦截器已写入）
         UserHolder.removeUser();
+
         return Result.ok("退出成功");
     }
 
@@ -78,13 +92,15 @@ public class UserController {
      */
     @GetMapping("/me")
     public Result me() {
-        // 从ThreadLocal取
+        // 从ThreadLocal取（拦截器已写入）
         UserDTO user = UserHolder.getUser();
         return Result.ok(user);
     }
 
+    // -------------------------------------舍弃功能----------------------------------------------------
+
     /**
-     * 查看用户详情
+     * 根据id查询用户，详细信息
      *
      * @param userId
      * @return
@@ -105,7 +121,7 @@ public class UserController {
 
 
     /**
-     * 根据id查询用户
+     * 根据id查询用户，简略信息
      *
      * @param userId
      * @return

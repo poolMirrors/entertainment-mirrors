@@ -33,6 +33,8 @@ public class BlogController {
     @Resource
     private IVoucherService voucherService;
 
+    // --------------------------------------主要实现-------------------------------------------------------
+
     /**
      * 保存博客：
      * <p>
@@ -51,17 +53,71 @@ public class BlogController {
     }
 
     /**
-     * 点赞博客
+     * Feed流推模式下，信息的滚动分页；
+     * 用户博客动态功能（关注的UP更新博客时，进行推送）
      *
-     * @param id
+     * @param max
+     * @param offset 注意第一次查询offset为0，设置默认值，避免空指针
      * @return
      */
-    @PutMapping("/like/{id}")
-    public Result likeBlog(@PathVariable("id") Long id) {
-        Result result = blogService.likeBlog(id);
+    @GetMapping("/of/follow")
+    public Result queryBlogFollow(@RequestParam("lastId") Long max, @RequestParam(value = "offset", defaultValue = "0") Integer offset) {
+        Result result = blogService.queryBlogOfFollow(max, offset);
         System.out.println(result);
         return result;
     }
+
+    /**
+     * 异步编排，查询博客，返回blog涉及的信息（用户信息、博客信息，店铺信息，优惠券信息）；优化串行；
+     * 根据blogId查询blog，得到userId和shopId -> 再查用户信息、商铺信息、优惠券信息 ->返回；
+     * TODO 完善返回方式
+     *
+     * @param blogId
+     * @return
+     */
+    @GetMapping("/async/{blogId}")
+    public Result getDetailByCF(@PathVariable("blogId") Long blogId) {
+        // 线程池
+        ExecutorService threadPool = new ThreadPoolExecutor(10, 10, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(100));
+        Object[] ret = new Object[4];
+
+        // 1.查询blog
+        CompletableFuture<long[]> cf1 = CompletableFuture.supplyAsync(() -> {
+            Blog blog = blogService.getById(blogId);
+            ret[0] = blog;
+            // {用户id，店铺id}
+            return new long[]{blog.getUserId(), blog.getShopId()};
+        }, threadPool);
+
+        // 1.1.并行查用户详细信息
+        CompletableFuture<Void> cf2 = cf1.thenAcceptAsync((arr) -> {
+            long userId = arr[0];
+            UserInfo userInfo = userInfoService.getById(userId);
+            ret[1] = userInfo;
+        }, threadPool);
+
+        // 1.2.并行查优惠券
+        CompletableFuture<Void> cf3 = cf1.thenAcceptAsync((arr) -> {
+            long shopId = arr[1];
+            List<Voucher> vouchers = voucherService.query().eq("shop_id", shopId).list();
+            ret[2] = vouchers;
+        }, threadPool);
+
+        // 1.3.并行查店铺
+        CompletableFuture<Void> cf4 = cf1.thenAcceptAsync((arr) -> {
+            long shopId = arr[1];
+            Shop shop = shopService.getById(shopId);
+            ret[3] = shop;
+        }, threadPool);
+
+        // 2.等待执行完
+        CompletableFuture<Void> tmp = CompletableFuture.allOf(cf2, cf3, cf4);
+        tmp.join();
+
+        return Result.ok(ret);
+    }
+
+    // ------------------------------------舍弃功能------------------------------------------------------------------
 
     /**
      * 博客主页面，分页
@@ -80,6 +136,20 @@ public class BlogController {
         // 获取当前页数据
         List<Blog> records = page.getRecords();
         return Result.ok(records);
+    }
+
+
+    /**
+     * 点赞博客
+     *
+     * @param id
+     * @return
+     */
+    @PutMapping("/like/{id}")
+    public Result likeBlog(@PathVariable("id") Long id) {
+        Result result = blogService.likeBlog(id);
+        System.out.println(result);
+        return result;
     }
 
     /**
@@ -139,69 +209,6 @@ public class BlogController {
         // 获取当前页数据
         List<Blog> records = page.getRecords();
         return Result.ok(records);
-    }
-
-    /**
-     * Feed流推模式下，信息的滚动分页
-     *
-     * @param max
-     * @param offset 注意第一次查询offset为0，设置默认值，避免空指针
-     * @return
-     */
-    @GetMapping("/of/follow")
-    public Result queryBlogFollow(@RequestParam("lastId") Long max, @RequestParam(value = "offset", defaultValue = "0") Integer offset) {
-        Result result = blogService.queryBlogOfFollow(max, offset);
-        System.out.println(result);
-        return result;
-    }
-
-    /**
-     * 异步编排，查询博客，返回blog涉及的信息（用户信息、博客信息，店铺信息，优惠券信息）；优化串行；
-     * 根据blogId查询blog，得到userId和shopId -> 再查用户信息、商铺信息、优惠券信息 ->返回
-     *
-     * @param blogId
-     * @return
-     */
-    @GetMapping("/async/{blogId}")
-    public Result getDetailByCF(@PathVariable("blogId") Long blogId) {
-        // 线程池
-        ExecutorService threadPool = new ThreadPoolExecutor(10, 10, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(100));
-        // TODO 完善返回方式
-        Object[] ret = new Object[4];
-
-        // 1.查询blog
-        CompletableFuture<long[]> cf1 = CompletableFuture.supplyAsync(() -> {
-            Blog blog = blogService.getById(blogId);
-            ret[0] = blog;
-            return new long[]{blog.getUserId(), blog.getShopId()};
-        }, threadPool);
-
-        // 1.1.并行查用户详细信息
-        CompletableFuture<Void> cf2 = cf1.thenAcceptAsync((arr) -> {
-            long userId = arr[0];
-            UserInfo userInfo = userInfoService.getById(userId);
-            ret[1] = userInfo;
-        }, threadPool);
-
-        // 1.2.并行查优惠券
-        CompletableFuture<Void> cf3 = cf1.thenAcceptAsync((arr) -> {
-            long shopId = arr[1];
-            List<Voucher> vouchers = voucherService.query().eq("shop_id", shopId).list();
-            ret[2] = vouchers;
-        }, threadPool);
-
-        // 1.3.并行查店铺
-        CompletableFuture<Void> cf4 = cf1.thenAcceptAsync((arr) -> {
-            long shopId = arr[1];
-            Shop shop = shopService.getById(shopId);
-            ret[3] = shop;
-        }, threadPool);
-
-        // 2.等待执行完
-        CompletableFuture<Void> tmp = CompletableFuture.allOf(cf2, cf3, cf4);
-        tmp.join();
-
-        return Result.ok(ret);
     }
 
 }

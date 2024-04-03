@@ -18,7 +18,7 @@ import java.lang.annotation.*;
 public @interface RestrictRequest {
 
     /**
-     * 限制时间间隔，默认5秒
+     * 时间间隔，默认5秒
      *
      * @return
      */

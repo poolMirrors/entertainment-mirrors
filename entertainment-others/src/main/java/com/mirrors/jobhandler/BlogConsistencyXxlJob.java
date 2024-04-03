@@ -2,10 +2,10 @@ package com.mirrors.jobhandler;
 
 import com.alibaba.fastjson.JSON;
 import com.mirrors.entity.Blog;
+import com.mirrors.jobhandler.abs.TimeTaskMessageAbstract;
 import com.mirrors.entity.TimeTaskMessage;
 import com.mirrors.mapper.BlogMapper;
 import com.mirrors.service.ITimeTaskMessageService;
-import com.mirrors.service.abs.TimeTaskMessageAbstract;
 import com.xxl.job.core.context.XxlJobHelper;
 import com.xxl.job.core.handler.annotation.XxlJob;
 import lombok.extern.slf4j.Slf4j;
@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 import javax.annotation.Resource;
 
 /**
- * 分布式事务，将blog保证数据库与Elasticsearch数据一致性
+ * 将blog保证数据库与Elasticsearch数据一致性
  *
  * @author mirrors
  * @version 1.0
@@ -42,8 +42,8 @@ public class BlogConsistencyXxlJob extends TimeTaskMessageAbstract {
     /**
      * 任务调度入口，可以设置为每1秒进行调用
      */
-    @XxlJob("consistency")
-    public void BlogConsistency() {
+    @XxlJob("blogConsistency")
+    public void blogConsistency() {
         // 分片参数
         int shardIndex = XxlJobHelper.getShardIndex();
         int shardTotal = XxlJobHelper.getShardTotal();

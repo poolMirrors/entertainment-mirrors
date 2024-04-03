@@ -41,10 +41,10 @@ public class MQConfig {
      * RabbitTemplate的多例化
      * <ol>spring中bean的scope属性，有如下5种类型：
      *     <li>singleton 表示在spring容器中的单例，通过spring容器获得该bean时总是返回唯一的实例</li>
-     *     <li>prototype表示每次获得bean都会生成一个新的对象</li>
-     *     <li>request表示在一次http请求内有效（只适用于web应用）</li>
-     *     <li>session表示在一个用户会话内有效（只适用于web应用）</li>
-     *     <li>globalSession表示在全局会话内有效（只适用于web应用）</li></li>
+     *     <li>prototype 表示每次获得bean都会生成一个新的对象</li>
+     *     <li>request 表示在一次http请求内有效（只适用于web应用）</li>
+     *     <li>session 表示在一个用户会话内有效（只适用于web应用）</li>
+     *     <li>globalSession 表示在全局会话内有效（只适用于web应用）</li></li>
      * </ol>
      * 开启confirm和return要进行多例化？
      *
@@ -72,6 +72,44 @@ public class MQConfig {
 
         return new Jackson2JsonMessageConverter();
     }
+
+    //----------------------------------扣减库存-------------------------------------------------------
+
+    /**
+     * 创建持久化的队列
+     *
+     * @return
+     */
+    @Bean
+    public Queue repertoryQueue() {
+        return QueueBuilder.durable(MQConstants.REPERTORY_QUEUE).build();
+    }
+
+    /**
+     * 交换机
+     *
+     * @return
+     */
+    @Bean
+    public Exchange repertoryExchange() {
+        return ExchangeBuilder.directExchange(MQConstants.REPERTORY_EXCHANGE).durable(true).build();
+    }
+
+    /**
+     * 绑定通道
+     *
+     * @param repertoryQueue
+     * @param repertoryExchange
+     * @return
+     */
+    @Bean
+    public Binding bindingRepertory(Queue repertoryQueue, Exchange repertoryExchange) {
+        return BindingBuilder
+                .bind(repertoryQueue)
+                .to(repertoryExchange)
+                .with(MQConstants.REPERTORY_ROUTING_KEY).noargs();
+    }
+
 
     //----------------------------------抢购业务相关-----------------------------------------------------
 

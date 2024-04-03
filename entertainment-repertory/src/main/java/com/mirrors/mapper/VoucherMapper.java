@@ -10,5 +10,6 @@ import org.apache.ibatis.annotations.Mapper;
  * @date 2024/3/7 15:19
  */
 @Mapper
+@Deprecated
 public interface VoucherMapper extends BaseMapper<Voucher> {
 }

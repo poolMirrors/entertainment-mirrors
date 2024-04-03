@@ -194,6 +194,7 @@ public class UploadServiceImpl extends ServiceImpl<UploadFileMapper, UploadFile>
         if (files == null || files.size() == 0) {
             return Result.ok("文件不存在，可以上传");
         }
+
         // 查询文件系统中是否存在
         UploadFile uploadFile = files.get(0);
         GetObjectArgs args = GetObjectArgs.builder()

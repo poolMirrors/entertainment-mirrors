@@ -1,6 +1,6 @@
-package com.mirrors.service.abs;
+package com.mirrors.jobhandler.abs;
 
-import com.mirrors.entity.TimeTaskMessage;
+import com.mirrors.pojo.TimeTaskMessage;
 import com.mirrors.service.ITimeTaskMessageService;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Data
 @Component
+@Deprecated
 public abstract class TimeTaskMessageAbstract {
 
     @Autowired

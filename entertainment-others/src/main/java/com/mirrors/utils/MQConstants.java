@@ -9,11 +9,21 @@ package com.mirrors.utils;
  */
 public class MQConstants {
 
+    public static final String REPERTORY_QUEUE = "repertory.queue";
+
+    public static final String REPERTORY_EXCHANGE = "repertory.exchange";
+
+    public static final String REPERTORY_ROUTING_KEY = "repertory.routing.key";
+
+    //
+
     public static final String SECKILL_QUEUE = "seckill.queue";
 
     public static final String SECKILL_EXCHANGE = "seckill.exchange";
 
     public static final String SECKILL_ROUTING_KEY = "seckill.routing.key";
+
+    //
 
     public static final String DELAY_ORDER_QUEUE = "delay.order.queue";
 

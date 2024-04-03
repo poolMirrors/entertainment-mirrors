@@ -7,10 +7,13 @@ import com.mirrors.dto.UserDTO;
 import com.mirrors.entity.MultiDelayMessage;
 import com.mirrors.entity.SeckillVoucher;
 import com.mirrors.entity.VoucherOrder;
+import com.mirrors.exception.BusinessException;
 import com.mirrors.mapper.VoucherOrderMapper;
 import com.mirrors.mq.MqSender;
+import com.mirrors.entity.TimeTaskMessage;
 import com.mirrors.repertory.ISeckillVoucherRepService;
 import com.mirrors.service.ISeckillVoucherService;
+import com.mirrors.service.ITimeTaskMessageService;
 import com.mirrors.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mirrors.utils.RedisIDCreator;
@@ -47,13 +50,16 @@ import java.util.concurrent.Executors;
 @Service
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
 
+    @Autowired
+    private ITimeTaskMessageService timeTaskMessageService;
+
     @Resource
     private ISeckillVoucherService seckillVoucherService;
 
     /**
      * 远程调用
      */
-    @DubboReference
+    //@DubboReference
     private ISeckillVoucherRepService seckillVoucherRepService;
 
     @Resource
@@ -146,85 +152,79 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Transactional
     @Override
     public void createVoucherOrderRabbitMQ(VoucherOrder voucherOrder) {
-        //（1）-----------加锁-------------
+        ////（1）-----------加锁（多个消费者消费同一个消息）-------------
+        //
+        //Long userId = voucherOrder.getUserId();
+        //Long voucherId = voucherOrder.getVoucherId();
+        //// 创建分布式锁
+        //RLock lock = redissonClient.getLock("order:" + userId);
+        //boolean isLock = lock.tryLock();
+        //if (!isLock) {
+        //    // 获取锁失败，直接返回失败
+        //    log.error("不允许重复下单！");
+        //    return;
+        //}
+        //// 获取锁成功
+        //try {
+        //    // 查询订单
+        //    int count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
+        //    if (count > 0) {
+        //        log.error("该用户已经购买过一次！");
+        //        return;
+        //    }
+        //
+        //    //（1）本地保存订单
+        //    save(voucherOrder);
+        //    //（2）保存消息表，扣减库存
+        //    TimeTaskMessage message = timeTaskMessageService.addMessage("voucherRepertory", String.valueOf(voucherOrder.getVoucherId()), null, null);
+        //    if (message == null) {
+        //        throw new BusinessException("添加消息记录失败");
+        //    }
+        //
+        //    // RPC调用库存服务，扣减库存
+        //    //boolean success = seckillVoucherRepService.reduceSeckillVoucherRep(voucherId);
+        //
+        //    // 同时发送延时消息给MQ，死信交换机
+        //    mqSender.sendDelayOrderMessage(
+        //            MultiDelayMessage.builder()
+        //                    .data(voucherOrder.getId())
+        //                    .delayMillis(CollUtil.newArrayList(10000L, 10000L, 10000L))
+        //                    .build()
+        //    );
+        //
+        //} finally {
+        //    // 释放锁
+        //    lock.unlock();
+        //}
+
+
+        //（2）-----------不加锁-------------
 
         Long userId = voucherOrder.getUserId();
         Long voucherId = voucherOrder.getVoucherId();
-        // 创建分布式锁
-        RLock lock = redissonClient.getLock("order:" + userId);
-        boolean isLock = lock.tryLock();
-        if (!isLock) {
-            // 获取锁失败，直接返回失败
-            log.error("不允许重复下单！");
+
+        // 查询订单
+        int count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
+        if (count > 0) {
+            log.error("该用户已经购买过一次！");
             return;
         }
-        // 获取锁成功
-        try {
-            // 查询订单
-            int count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
-            if (count > 0) {
-                log.error("该用户已经购买过一次！");
-                return;
-            }
-            // 扣减库存
-            //boolean success = seckillVoucherService.update()
-            //        .setSql("stock = stock - 1")
-            //        .eq("voucher_id", voucherId)
-            //        .gt("stock", 0) //【乐观锁】只要库存大于0就可以秒杀成功（超卖问题），优化需要比较version
-            //        .update();
 
-            //（1）保存订单
-            save(voucherOrder);
-            //（2）TODO 保存消息表
-
-            //（3）RPC调用库存服务，扣减库存
-            boolean success = seckillVoucherRepService.reduceSeckillVoucherRep(voucherId);
-
-            // 同时发送延时消息给MQ，死信交换机
-            mqSender.sendDelayOrderMessage(
-                    MultiDelayMessage.builder()
-                            .data(voucherOrder.getId())
-                            .delayMillis(CollUtil.newArrayList(10000L, 10000L, 10000L))
-                            .build()
-            );
-
-        } finally {
-            // 释放锁
-            lock.unlock();
+        //（1）本地保存订单
+        save(voucherOrder);
+        //（2）保存消息表（等待任务调度，发送给mq）
+        TimeTaskMessage message = timeTaskMessageService.addMessage("voucherRepertory", String.valueOf(voucherOrder.getVoucherId()), null, null);
+        if (message == null) {
+            throw new BusinessException("添加消息记录失败");
         }
 
-
-        //（2）---------不加锁-------------
-
-        //Long userId = voucherOrder.getUserId();
-        //Long voucherId = voucherOrder.getVoucherId();
-        //// 查询数据库，是否一人一单（redis判断过了，MySQL还要判断？）
-        //int count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
-        //if (count > 0) {
-        //    log.error("不能重复购买");
-        //    return;
-        //}
-        //
-        //// 扣减库存
-        //boolean success = seckillVoucherService.update()
-        //        .setSql("stock = stock - 1")
-        //        .eq("voucher_id", voucherOrder.getVoucherId())
-        //        .gt("stock", 0) //【乐观锁】库存大于0（超卖问题）
-        //        .update();
-        //if (!success) {
-        //    log.error("不能重复购买");
-        //    return;
-        //}
-        //
-        //// 创建订单，写入数据库
-        //save(voucherOrder);
-        //// 同时发送延时消息给MQ，死信交换机
-        //mqSender.sendDelayOrderMessage(
-        //        MultiDelayMessage.builder()
-        //                .data(voucherOrder.getId())
-        //                .delayMillis(CollUtil.newArrayList(10000L, 10000L, 10000L))
-        //                .build()
-        //);
+        // 同时发送延时消息给MQ，死信交换机（异步）
+        mqSender.sendDelayOrderMessage(
+                MultiDelayMessage.builder()
+                        .data(voucherOrder.getId())
+                        .delayMillis(CollUtil.newArrayList(10000L, 10000L, 10000L))
+                        .build()
+        );
     }
 
 

@@ -19,6 +19,8 @@ public class EsSearchController {
     @Autowired
     private ISearchService searchService;
 
+    // ------------------------------------------主要实现---------------------------------------------
+
     /**
      * 查询推文blog，同时分页
      *
@@ -29,7 +31,7 @@ public class EsSearchController {
      */
     @GetMapping("/blog/{text}/{page}/{size}")
     public Result list(@PathVariable("text") String text, @PathVariable("page") Integer page, @PathVariable("size") Integer size) {
-        Result result = searchService.searchBlogByEs(text, page.intValue(), size.intValue());
+        Result result = searchService.searchBlogByEs(text, page, size);
         System.out.println(result);
         return result;
     }

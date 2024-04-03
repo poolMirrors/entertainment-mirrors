@@ -2,11 +2,10 @@ package com.mirrors.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.mirrors.entity.TimeTaskMessage;
 import com.mirrors.mapper.TimeTaskMessageMapper;
+import com.mirrors.pojo.TimeTaskMessage;
 import com.mirrors.service.ITimeTaskMessageService;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -19,8 +18,8 @@ import java.util.List;
  * @date 2024/1/18 15:02
  */
 @Slf4j
-@DubboService
 @Service
+@Deprecated
 public class TimeTaskMessageServiceImpl extends ServiceImpl<TimeTaskMessageMapper, TimeTaskMessage> implements ITimeTaskMessageService {
 
     /**

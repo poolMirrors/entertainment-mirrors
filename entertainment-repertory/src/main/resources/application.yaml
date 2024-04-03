@@ -26,3 +26,15 @@ dubbo:
     address: nacos://192.168.101.130:8848
   provider:
     timeout: 30000
+# 配置xxl-job
+xxl-job:
+  admin:
+    addresses: http://127.0.0.1:9876/xxl-job-admin
+  executor:
+    app-name: job-handler
+    address: # 为空使用内嵌服务地址
+    ip: # 执行器IP默认为空表示自动获取IP
+    port: 9999
+    log-path: C:/JavaProjects/2-点评项目/project/xxl-job-master/logs
+    log-retention-days: 30
+  accessToken: default_token

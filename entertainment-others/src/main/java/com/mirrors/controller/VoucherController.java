@@ -18,6 +18,23 @@ public class VoucherController {
     @Resource
     private IVoucherService voucherService;
 
+    // -------------------------------------------主要实现------------------------------------------------
+
+    /**
+     * 查询店铺的优惠券列表
+     *
+     * @param shopId 店铺id
+     * @return 优惠券列表
+     */
+    @GetMapping("/list/{shopId}")
+    public Result queryVoucherOfShop(@PathVariable("shopId") Long shopId) {
+        Result result = voucherService.queryVoucherOfShop(shopId);
+        System.out.println(result);
+        return result;
+    }
+
+    // -------------------------------------------舍弃功能------------------------------------------------
+
     /**
      * 新增普通券
      *
@@ -40,18 +57,5 @@ public class VoucherController {
     public Result addSeckillVoucher(@RequestBody Voucher voucher) {
         voucherService.addSeckillVoucher(voucher);
         return Result.ok(voucher.getId());
-    }
-
-    /**
-     * 查询店铺的优惠券列表
-     *
-     * @param shopId 店铺id
-     * @return 优惠券列表
-     */
-    @GetMapping("/list/{shopId}")
-    public Result queryVoucherOfShop(@PathVariable("shopId") Long shopId) {
-        Result result = voucherService.queryVoucherOfShop(shopId);
-        System.out.println(result);
-        return result;
     }
 }
